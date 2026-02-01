@@ -1,5 +1,8 @@
 # Anki Sync Server Enhanced
 
+[![Docker Hub](https://img.shields.io/docker/pulls/chrislongros/anki-sync-server-enhanced)](https://hub.docker.com/r/chrislongros/anki-sync-server-enhanced)
+[![GitHub Actions](https://github.com/chrislongros/anki-sync-server-enhanced/actions/workflows/build.yml/badge.svg)](https://github.com/chrislongros/anki-sync-server-enhanced/actions)
+
 Enhanced Docker image for self-hosted Anki sync server, built directly from the official [Anki source code](https://github.com/ankitects/anki).
 
 ## Features
