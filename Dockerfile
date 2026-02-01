@@ -1,24 +1,33 @@
-FROM rust:1.75-slim-bookworm AS builder
+FROM rustlang/rust:nightly-slim AS builder
 
-# Install dependencies
 RUN apt-get update && apt-get install -y \
     git \
+    pkg-config \
+    libssl-dev \
     protobuf-compiler \
+    curl \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and build anki-sync-server
-RUN git clone --depth 1 https://github.com/ankitects/anki.git /anki
-WORKDIR /anki
-RUN cargo build --release --package anki-sync-server
+# Auto-detect latest Anki version if not provided
+ARG ANKI_VERSION=""
+RUN if [ -z "$ANKI_VERSION" ]; then \
+      ANKI_VERSION=$(curl -s https://api.github.com/repos/ankitects/anki/releases/latest | jq -r '.tag_name'); \
+    fi && \
+    echo "Building Anki sync server version: $ANKI_VERSION" && \
+    cargo install --git https://github.com/ankitects/anki.git \
+      --tag ${ANKI_VERSION} \
+      anki-sync-server
 
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     wget \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -s /bin/false anki
+    && useradd -r -s /bin/false -m anki
 
-COPY --from=builder /anki/target/release/anki-sync-server /usr/local/bin/
+COPY --from=builder /usr/local/cargo/bin/anki-sync-server /usr/local/bin/
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
