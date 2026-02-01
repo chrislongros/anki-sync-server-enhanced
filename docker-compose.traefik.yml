@@ -1,0 +1,86 @@
+# =============================================================================
+# Anki Sync Server Enhanced - With Traefik Reverse Proxy (HTTPS)
+# =============================================================================
+#
+# This configuration provides automatic HTTPS using Traefik and Let's Encrypt.
+#
+# Prerequisites:
+#   - Domain pointing to your server
+#   - Ports 80 and 443 open
+#
+# Setup:
+#   1. Replace 'anki.yourdomain.com' with your domain
+#   2. Replace 'your@email.com' with your email
+#   3. Run: docker-compose -f docker-compose.traefik.yml up -d
+#
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Traefik Reverse Proxy
+  # ---------------------------------------------------------------------------
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    command:
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=your@email.com"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/letsencrypt
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Anki Sync Server
+  # ---------------------------------------------------------------------------
+  anki-sync-server:
+    image: chrislongros/anki-sync-server-enhanced:latest
+    container_name: anki-sync-server
+    
+    environment:
+      - SYNC_USER1=user1:changeme123
+      - SYNC_HOST=0.0.0.0
+      - SYNC_PORT=8080
+      - SYNC_BASE=/data
+      - LOG_LEVEL=info
+      - TZ=Europe/Berlin
+      - BACKUP_ENABLED=true
+      - BACKUP_SCHEDULE=0 3 * * *
+      - BACKUP_RETENTION_DAYS=7
+    
+    volumes:
+      - anki_data:/data
+      - anki_backups:/backups
+    
+    labels:
+      - "traefik.enable=true"
+      # HTTP router
+      - "traefik.http.routers.anki.rule=Host(`anki.yourdomain.com`)"
+      - "traefik.http.routers.anki.entrypoints=websecure"
+      - "traefik.http.routers.anki.tls.certresolver=letsencrypt"
+      # Service
+      - "traefik.http.services.anki.loadbalancer.server.port=8080"
+    
+    restart: unless-stopped
+
+# =============================================================================
+# Volume Definitions
+# =============================================================================
+volumes:
+  anki_data:
+    name: anki_sync_data
+  anki_backups:
+    name: anki_sync_backups
+  traefik_certs:
+    name: traefik_certificates
