@@ -1,61 +1,17 @@
-# =============================================================================
-# Anki Sync Server Enhanced
-# =============================================================================
-# 
-# Usage:
-#   1. Edit environment variables below
-#   2. Run: docker-compose up -d
-#   3. In Anki: Tools > Preferences > Syncing > set server to http://your-ip:8080/
-#
-# =============================================================================
-
 services:
   anki-sync-server:
     image: chrislongros/anki-sync-server-enhanced:latest
     container_name: anki-sync-server
-    
     ports:
       - "8080:8080"
-      # - "9090:9090"  # Uncomment for Prometheus metrics
-    
     environment:
-      # Users (required) - format: username:password
-      - SYNC_USER1=user1:changeme123
-      - SYNC_USER2=user2:changeme456
-      
-      # Server
-      - SYNC_HOST=0.0.0.0
-      - SYNC_PORT=8080
-      - SYNC_BASE=/data
-      - LOG_LEVEL=info
-      - TZ=Europe/Berlin
-      
-      # File permissions (match your host user)
-      - PUID=1000
-      - PGID=1000
-      
-      # Backups
-      - BACKUP_ENABLED=true
-      - BACKUP_SCHEDULE=0 3 * * *
-      - BACKUP_RETENTION_DAYS=7
-      
-      # Metrics (Prometheus)
-      - METRICS_ENABLED=false
-      - METRICS_PORT=9090
-      
-      # Notifications (discord/telegram/slack/generic)
-      - NOTIFY_ENABLED=false
-      - NOTIFY_TYPE=discord
-      # - NOTIFY_WEBHOOK_URL=https://discord.com/api/webhooks/...
-    
+      - SYNC_USER1=user1:password1
+      - TZ=UTC
     volumes:
       - anki_data:/data
       - anki_backups:/backups
-    
     restart: unless-stopped
 
 volumes:
   anki_data:
-    name: anki_sync_data
   anki_backups:
-    name: anki_sync_backups

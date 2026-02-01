@@ -1,3 +1,21 @@
+# =============================================================================
+# Anki Sync Server Enhanced - Comprehensive Docker Image
+# =============================================================================
+# Features:
+# - Auto-version detection from GitHub
+# - Multi-architecture (amd64, arm64, arm/v7)
+# - Multi-user with hashed password support
+# - Docker secrets support
+# - Automated backups with S3 upload
+# - Prometheus metrics
+# - Web dashboard
+# - Email/webhook notifications
+# - Rate limiting
+# - Fail2ban
+# - Sync logging
+# - User management CLI
+# =============================================================================
+
 FROM rustlang/rust:nightly-slim AS builder
 
 RUN apt-get update && apt-get install -y \
@@ -19,7 +37,7 @@ RUN if [ -z "$ANKI_VERSION" ]; then \
       --tag ${ANKI_VERSION} \
       anki-sync-server
 
-# Use Alpine for smaller image
+# Final image - Alpine for small size
 FROM alpine:3.21
 
 # Install runtime dependencies
@@ -35,25 +53,51 @@ RUN apk add --no-cache \
     jq \
     netcat-openbsd \
     shadow \
-    && adduser -D -s /bin/false -h /home/anki anki
+    python3 \
+    py3-pip \
+    py3-boto3 \
+    py3-flask \
+    msmtp \
+    msmtp-mta \
+    fail2ban \
+    iptables \
+    ip6tables \
+    && pip3 install --break-system-packages argon2-cffi \
+    && adduser -D -s /bin/bash -h /home/anki -u 1000 anki \
+    && mkdir -p /var/log/anki /var/lib/anki /run/fail2ban \
+    && touch /var/log/anki/sync.log /var/log/anki/auth.log /var/log/anki/backup.log \
+    && chown -R anki:anki /var/log/anki /var/lib/anki
 
 # Copy binary and version info
 COPY --from=builder /usr/local/cargo/bin/anki-sync-server /usr/local/bin/
 COPY --from=builder /anki_version.txt /anki_version.txt
 
-# Copy scripts
-COPY entrypoint.sh /entrypoint.sh
-COPY backup.sh /usr/local/bin/backup.sh
-COPY healthcheck.sh /usr/local/bin/healthcheck.sh
+# Copy all scripts
+COPY scripts/ /usr/local/bin/
+COPY dashboard.py /usr/local/bin/dashboard.py
 
-RUN chmod +x /entrypoint.sh /usr/local/bin/backup.sh /usr/local/bin/healthcheck.sh && \
-    mkdir -p /data /backups /config && \
-    chown -R anki:anki /data /backups /config /home/anki
+# Copy fail2ban config
+COPY fail2ban/ /etc/fail2ban/
 
-EXPOSE 8080
+RUN chmod +x /usr/local/bin/*.sh /usr/local/bin/*.py \
+    && mkdir -p /data /backups /config \
+    && chown -R anki:anki /data /backups /config /home/anki
+
+# Ports
+# 8080 - Anki sync server
+# 9090 - Prometheus metrics
+# 8081 - Web dashboard
+EXPOSE 8080 9090 8081
+
 VOLUME ["/data", "/backups", "/config"]
+
+# Watchtower labels
+LABEL com.centurylinklabs.watchtower.enable="true"
+LABEL org.opencontainers.image.source="https://github.com/chrislongros/anki-sync-server-enhanced"
+LABEL org.opencontainers.image.description="Self-hosted Anki sync server with backups, metrics, dashboard, and notifications"
+LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD /usr/local/bin/healthcheck.sh
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -2,278 +2,212 @@
 
 [![Docker Hub](https://img.shields.io/docker/pulls/chrislongros/anki-sync-server-enhanced)](https://hub.docker.com/r/chrislongros/anki-sync-server-enhanced)
 [![GitHub Actions](https://github.com/chrislongros/anki-sync-server-enhanced/actions/workflows/build.yml/badge.svg)](https://github.com/chrislongros/anki-sync-server-enhanced/actions)
-[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-available-blue)](https://ghcr.io/chrislongros/anki-sync-server-enhanced)
+[![GHCR](https://img.shields.io/badge/ghcr.io-available-blue)](https://ghcr.io/chrislongros/anki-sync-server-enhanced)
 
-A production-ready Docker image for self-hosted Anki sync server. Built from the official [Anki source code](https://github.com/ankitects/anki) with additional features for reliability and monitoring.
-
-## Why This Image?
-
-The official Anki project provides source code but no pre-built Docker image. This project fills that gap.
-
-| Feature | Build from source | This image |
-|---------|-------------------|------------|
-| Pre-built Docker image | No | Yes |
-| Auto-updates to latest Anki | Manual | Daily via GitHub Actions |
-| Multi-arch (amd64, arm64) | Manual setup | Included |
-| Automated backups | No | Yes, with retention policy |
-| Prometheus metrics | No | Yes |
-| Discord/Telegram/Slack alerts | No | Yes |
-| Docker secrets support | No | Yes |
-| Health check endpoint | Yes | Yes |
-| PUID/PGID support | Partial | Yes |
+Production-ready Docker image for self-hosted Anki sync server with backups, monitoring, dashboard, and security features.
 
 ## Features
 
-- **Auto-updated** — Automatically builds latest Anki releases via GitHub Actions
-- **Multi-architecture** — Supports amd64 and arm64 (Raspberry Pi, Apple Silicon)
-- **Multi-user** — Support for up to 99 users via environment variables
-- **Docker secrets** — Secure credential management for production
-- **Automated backups** — Scheduled backups with configurable retention
-- **Prometheus metrics** — Built-in metrics endpoint for monitoring
-- **Notifications** — Discord, Telegram, Slack alerts for server events
-- **Health checks** — Built-in health monitoring for orchestration
-- **Non-root** — Runs as unprivileged user for security
-- **Small image** — Alpine-based for minimal footprint
+| Feature | This Image |
+|---------|------------|
+| Pre-built Docker image | Yes |
+| Auto-updates (daily builds) | Yes |
+| Multi-arch (amd64, arm64, arm/v7) | Yes |
+| Automated backups with retention | Yes |
+| S3/MinIO backup upload | Yes |
+| Prometheus metrics | Yes |
+| Web dashboard | Yes |
+| Discord/Telegram/Slack/Email alerts | Yes |
+| Docker secrets support | Yes |
+| Hashed passwords | Yes |
+| Fail2ban integration | Yes |
+| Rate limiting | Yes |
+| User management CLI | Yes |
+| PUID/PGID support | Yes |
 
 ## Quick Start
 
 ```bash
 docker run -d \
-  --name anki-sync-server \
+  --name anki-sync \
   -p 8080:8080 \
   -e SYNC_USER1=user:password \
   -v anki_data:/data \
-  chrislongros/anki-sync-server-enhanced:latest
+  chrislongros/anki-sync-server-enhanced
 ```
 
-Or with docker-compose:
+## Docker Compose
 
 ```yaml
 services:
   anki-sync-server:
     image: chrislongros/anki-sync-server-enhanced:latest
     ports:
-      - "8080:8080"
+      - "8080:8080"   # Sync server
+      - "8081:8081"   # Dashboard (optional)
+      - "9090:9090"   # Metrics (optional)
     environment:
-      - SYNC_USER1=user1:password1
-      - SYNC_USER2=user2:password2
-    volumes:
-      - anki_data:/data
-    restart: unless-stopped
-
-volumes:
-  anki_data:
-```
-
-## Configuration
-
-### Environment Variables
-
-#### User Configuration (Required)
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `SYNC_USER1` to `SYNC_USER99` | User credentials | `username:password` |
-| `SYNC_USER1_FILE` to `SYNC_USER99_FILE` | Path to credentials file (Docker secrets) | `/run/secrets/user1` |
-
-#### Server Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SYNC_HOST` | Listen address | `0.0.0.0` |
-| `SYNC_PORT` | Listen port | `8080` |
-| `SYNC_BASE` | Data directory | `/data` |
-| `LOG_LEVEL` | Log verbosity (debug/info/warn/error) | `info` |
-| `TZ` | Timezone | `UTC` |
-| `PUID` | User ID for file ownership | `1000` |
-| `PGID` | Group ID for file ownership | `1000` |
-
-#### Backup Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `BACKUP_ENABLED` | Enable automated backups | `false` |
-| `BACKUP_SCHEDULE` | Cron schedule for backups | `0 3 * * *` (3 AM daily) |
-| `BACKUP_RETENTION_DAYS` | Days to keep old backups | `7` |
-
-#### Metrics Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `METRICS_ENABLED` | Enable Prometheus metrics | `false` |
-| `METRICS_PORT` | Metrics endpoint port | `9090` |
-
-#### Notification Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NOTIFY_ENABLED` | Enable notifications | `false` |
-| `NOTIFY_TYPE` | Type: discord/telegram/slack/generic | `discord` |
-| `NOTIFY_WEBHOOK_URL` | Webhook URL | - |
-
-## Deployment Examples
-
-### Basic Setup
-
-```yaml
-services:
-  anki-sync-server:
-    image: chrislongros/anki-sync-server-enhanced:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - SYNC_USER1=alice:secretpassword
+      - SYNC_USER1=alice:password1
+      - SYNC_USER2=bob:password2
       - TZ=Europe/Berlin
       - BACKUP_ENABLED=true
-    volumes:
-      - anki_data:/data
-      - ./backups:/backups
-    restart: unless-stopped
-
-volumes:
-  anki_data:
-```
-
-### Production with Docker Secrets
-
-```yaml
-services:
-  anki-sync-server:
-    image: chrislongros/anki-sync-server-enhanced:latest
-    ports:
-      - "8080:8080"
-      - "9090:9090"
-    environment:
-      - SYNC_USER1_FILE=/run/secrets/anki_user1
-      - BACKUP_ENABLED=true
       - METRICS_ENABLED=true
-      - NOTIFY_ENABLED=true
-      - NOTIFY_TYPE=discord
-      - NOTIFY_WEBHOOK_URL_FILE=/run/secrets/webhook
-    secrets:
-      - anki_user1
-      - webhook
+      - DASHBOARD_ENABLED=true
     volumes:
       - anki_data:/data
       - anki_backups:/backups
     restart: unless-stopped
-
-secrets:
-  anki_user1:
-    file: ./secrets/user1.txt
-  webhook:
-    file: ./secrets/discord.txt
 
 volumes:
   anki_data:
   anki_backups:
 ```
 
-### With Traefik (HTTPS)
+## Configuration Reference
+
+### Core
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SYNC_USER1`-`SYNC_USER99` | User credentials (user:pass) | Required |
+| `SYNC_HOST` | Listen address | `0.0.0.0` |
+| `SYNC_PORT` | Listen port | `8080` |
+| `LOG_LEVEL` | debug/info/warn/error | `info` |
+| `TZ` | Timezone | `UTC` |
+| `PUID` / `PGID` | File permissions | `1000` |
+| `PASSWORDS_HASHED` | Use hashed passwords | `0` |
+
+### Backups
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `BACKUP_ENABLED` | Enable backups | `false` |
+| `BACKUP_SCHEDULE` | Cron schedule | `0 3 * * *` |
+| `BACKUP_RETENTION_DAYS` | Keep days | `7` |
+
+### S3 Upload
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `S3_BACKUP_ENABLED` | Upload to S3 | `false` |
+| `S3_ENDPOINT` | S3 endpoint (MinIO/Garage) | - |
+| `S3_BUCKET` | Bucket name | - |
+| `S3_ACCESS_KEY` | Access key | - |
+| `S3_SECRET_KEY` | Secret key | - |
+| `S3_REGION` | Region | `us-east-1` |
+
+### Monitoring
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `METRICS_ENABLED` | Prometheus metrics | `false` |
+| `METRICS_PORT` | Metrics port | `9090` |
+| `DASHBOARD_ENABLED` | Web dashboard | `false` |
+| `DASHBOARD_PORT` | Dashboard port | `8081` |
+| `DASHBOARD_AUTH` | Auth (user:pass) | - |
+
+### Notifications
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NOTIFY_ENABLED` | Enable webhooks | `false` |
+| `NOTIFY_TYPE` | discord/telegram/slack/ntfy | `discord` |
+| `NOTIFY_WEBHOOK_URL` | Webhook URL | - |
+| `EMAIL_ENABLED` | Enable email | `false` |
+| `EMAIL_HOST` | SMTP host | - |
+| `EMAIL_PORT` | SMTP port | `587` |
+| `EMAIL_USER` / `EMAIL_PASS` | SMTP credentials | - |
+| `EMAIL_FROM` / `EMAIL_TO` | Email addresses | - |
+
+### Security
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FAIL2BAN_ENABLED` | Enable fail2ban | `false` |
+| `FAIL2BAN_MAX_RETRIES` | Max failures | `5` |
+| `FAIL2BAN_BAN_TIME` | Ban seconds | `3600` |
+| `RATE_LIMIT_ENABLED` | Enable rate limit | `false` |
+| `RATE_LIMIT_REQUESTS` | Max requests | `100` |
+| `RATE_LIMIT_WINDOW` | Window seconds | `60` |
+
+## CLI Tools
+
+```bash
+# User management
+docker exec anki-sync user-manager.sh list
+docker exec anki-sync user-manager.sh add john
+docker exec anki-sync user-manager.sh add john mypassword
+docker exec anki-sync user-manager.sh reset john newpass
+docker exec anki-sync user-manager.sh hash mypassword
+
+# Backup management
+docker exec anki-sync backup.sh
+docker exec anki-sync restore.sh --list
+docker exec anki-sync restore.sh --list-s3
+docker exec anki-sync restore.sh backup_file.tar.gz
+docker exec anki-sync restore.sh --s3 backup_file.tar.gz
+```
+
+## Client Configuration
+
+**Desktop:** Tools > Preferences > Syncing > `http://server:8080/`
+
+**AnkiDroid:** Settings > Sync > Custom server > `http://server:8080/`
+
+**AnkiMobile:** Settings > Sync > Custom server > `http://server:8080/`
+
+## Prometheus Metrics
+
+Available at `http://server:9090/metrics`:
+
+- `anki_sync_users_total` - User count
+- `anki_sync_data_bytes` - Data size
+- `anki_sync_backup_count` - Backup count
+- `anki_sync_uptime_seconds` - Uptime
+- `anki_auth_success_total` - Auth successes
+- `anki_auth_failed_total` - Auth failures
+
+## Web Dashboard
+
+Access at `http://server:8081/` (when enabled). Shows server status, users, backups, and statistics.
+
+## Docker Secrets
 
 ```yaml
 services:
   anki-sync-server:
     image: chrislongros/anki-sync-server-enhanced:latest
     environment:
-      - SYNC_USER1=alice:secretpassword
-    volumes:
-      - anki_data:/data
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.anki.rule=Host(`anki.yourdomain.com`)"
-      - "traefik.http.routers.anki.tls.certresolver=letsencrypt"
-    restart: unless-stopped
+      - SYNC_USER1_FILE=/run/secrets/anki_user1
+    secrets:
+      - anki_user1
+
+secrets:
+  anki_user1:
+    file: ./secrets/user1.txt  # Contains: username:password
 ```
 
-## Configuring Anki Clients
+## Image Sources
 
-### Desktop (Windows/Mac/Linux)
-
-1. Open Anki
-2. Go to **Tools → Preferences → Syncing**
-3. Set "Self-hosted sync server" to: `http://your-server:8080/`
-4. Click **Log Out** (if logged in)
-5. Click **Sync** and enter your credentials
-
-### AnkiDroid (Android)
-
-1. Open AnkiDroid
-2. Go to **Settings → Sync → Custom sync server**
-3. Set sync URL to: `http://your-server:8080/`
-4. Set media URL to: `http://your-server:8080/msync/`
-5. Sync with your credentials
-
-### AnkiMobile (iOS)
-
-1. Open AnkiMobile
-2. Go to **Settings → Sync → Custom server**
-3. Enter: `http://your-server:8080/`
-4. Sync with your credentials
-
-## Prometheus Metrics
-
-When `METRICS_ENABLED=true`, the following metrics are available at `http://server:9090/metrics`:
-
-| Metric | Description |
-|--------|-------------|
-| `anki_sync_users_total` | Total configured users |
-| `anki_sync_data_bytes` | Data directory size |
-| `anki_sync_backup_count` | Number of backup files |
-| `anki_sync_uptime_seconds` | Server uptime |
-| `anki_sync_info` | Server version info |
-
-## Manual Backup
-
-```bash
-# Trigger immediate backup
-docker exec anki-sync-server /usr/local/bin/backup.sh
-
-# List backups
-docker exec anki-sync-server ls -la /backups/
-
-# Restore from backup
-docker exec anki-sync-server tar -xzf /backups/anki_backup_20240101_030000.tar.gz -C /data
-```
-
-## Building Locally
-
-```bash
-# Auto-detect latest Anki version
-docker build -t anki-sync-server-enhanced .
-
-# Specify version
-docker build --build-arg ANKI_VERSION=25.09.2 -t anki-sync-server-enhanced .
-```
-
-## Image Registries
-
-This image is available from:
-
-- **Docker Hub**: `chrislongros/anki-sync-server-enhanced`
-- **GitHub Container Registry**: `ghcr.io/chrislongros/anki-sync-server-enhanced`
+- Docker Hub: `chrislongros/anki-sync-server-enhanced`
+- GHCR: `ghcr.io/chrislongros/anki-sync-server-enhanced`
 
 ## NAS Installation
 
-### TrueNAS SCALE
+- **TrueNAS SCALE:** See [truenas/README.md](truenas/README.md)
+- **Unraid:** Use [unraid/anki-sync-server.xml](unraid/anki-sync-server.xml)
 
-See [truenas/README.md](truenas/README.md) for installation options:
-- Custom App (easiest)
-- Helm chart
-- docker-compose
+## Building
 
-### Unraid
-
-1. Go to Docker tab
-2. Click "Add Container"
-3. Use template from [unraid/anki-sync-server.xml](unraid/anki-sync-server.xml)
-
-Or install via Community Apps (search "anki sync server").
+```bash
+docker build -t anki-sync-server-enhanced .
+docker build --build-arg ANKI_VERSION=25.09.2 -t anki-sync-server-enhanced .
+```
 
 ## Credits
 
-Built from the official [Anki](https://github.com/ankitects/anki) project by Ankitects.
+Built from the official [Anki](https://github.com/ankitects/anki) project.
 
 ## License
 
-This project follows the same license as Anki (AGPL-3.0).
+AGPL-3.0

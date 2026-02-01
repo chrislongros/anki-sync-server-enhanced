@@ -1,0 +1,85 @@
+# Full-featured Anki Sync Server configuration
+# Copy to docker-compose.yml and customize
+
+services:
+  anki-sync-server:
+    image: chrislongros/anki-sync-server-enhanced:latest
+    container_name: anki-sync-server
+    restart: unless-stopped
+    
+    ports:
+      - "8080:8080"   # Sync server
+      - "8081:8081"   # Dashboard
+      - "9090:9090"   # Prometheus metrics
+    
+    environment:
+      # Users (required)
+      - SYNC_USER1=alice:${ALICE_PASSWORD:-changeme}
+      - SYNC_USER2=bob:${BOB_PASSWORD:-changeme}
+      
+      # Core settings
+      - TZ=${TZ:-UTC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - LOG_LEVEL=info
+      
+      # Backups
+      - BACKUP_ENABLED=true
+      - BACKUP_SCHEDULE=0 3 * * *
+      - BACKUP_RETENTION_DAYS=14
+      
+      # S3 backup upload (optional)
+      - S3_BACKUP_ENABLED=${S3_ENABLED:-false}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_BUCKET=${S3_BUCKET:-}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      
+      # Monitoring
+      - METRICS_ENABLED=true
+      - METRICS_PORT=9090
+      - DASHBOARD_ENABLED=true
+      - DASHBOARD_PORT=8081
+      - DASHBOARD_AUTH=${DASHBOARD_AUTH:-}
+      
+      # Webhook notifications
+      - NOTIFY_ENABLED=${NOTIFY_ENABLED:-false}
+      - NOTIFY_TYPE=${NOTIFY_TYPE:-discord}
+      - NOTIFY_WEBHOOK_URL=${NOTIFY_WEBHOOK_URL:-}
+      
+      # Email notifications
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+      - EMAIL_HOST=${EMAIL_HOST:-}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_USER=${EMAIL_USER:-}
+      - EMAIL_PASS=${EMAIL_PASS:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - EMAIL_TO=${EMAIL_TO:-}
+      
+      # Security
+      - FAIL2BAN_ENABLED=true
+      - FAIL2BAN_MAX_RETRIES=5
+      - FAIL2BAN_BAN_TIME=3600
+    
+    volumes:
+      - anki_data:/data
+      - anki_backups:/backups
+      - anki_config:/config
+    
+    # Required for fail2ban
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  anki_data:
+  anki_backups:
+  anki_config:

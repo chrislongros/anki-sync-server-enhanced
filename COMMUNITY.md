@@ -1,5 +1,22 @@
 # Community Submissions
 
+## TrueNAS Official Catalog
+
+To submit to the official TrueNAS Apps catalog:
+
+1. Fork https://github.com/truenas/apps
+2. Read the contributors guide in the repo
+3. Create app structure in `ix-dev/community/anki-sync-server/`
+4. Submit PR
+
+Or request it be added:
+1. Go to https://forums.truenas.com
+2. Click "Feature Request"
+3. Request "Add Anki Sync Server to Apps Catalog"
+4. Link to this Docker image
+
+---
+
 ## Awesome Self-Hosted
 
 Submit a PR to https://github.com/awesome-selfhosted/awesome-selfhosted
@@ -119,8 +136,9 @@ Would appreciate any feedback or feature suggestions.
 
 To submit to Unraid Community Apps:
 
-1. Fork https://github.com/Unraid-Community-Apps/unraid-templates
-2. Add your template to a folder named after your GitHub username
-3. Submit a PR
+1. Fork https://github.com/selfhosters/unRAID-CA-templates
+2. Create folder `templates/chrislongros/`
+3. Add your template: `anki-sync-server.xml`
+4. Submit PR
 
 Your template file is at: `unraid/anki-sync-server.xml`
