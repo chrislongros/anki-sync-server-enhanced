@@ -2,11 +2,10 @@ name: Build and Push Docker Image
 
 on:
   schedule:
-    # Check daily at 6 AM UTC for new Anki releases
     - cron: '0 6 * * *'
   push:
     branches: [master, main]
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
 
 jobs:
   build:
@@ -23,31 +22,23 @@ jobs:
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "Latest Anki version: $LATEST_TAG"
 
-      - name: Check if image exists with this tag
-        id: check_tag
-        run: |
-          if docker manifest inspect chrislongros/anki-sync-server-enhanced:${{ steps.anki_version.outputs.tag }} > /dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        if: steps.check_tag.outputs.exists == 'false' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
-        if: steps.check_tag.outputs.exists == 'false' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
-        if: steps.check_tag.outputs.exists == 'false' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
             ANKI_VERSION=${{ steps.anki_version.outputs.tag }}

@@ -8,7 +8,9 @@ Enhanced Docker image for self-hosted Anki sync server, built directly from the 
 ## Features
 
 - **Auto-updated** to latest Anki releases via GitHub Actions
+- **Multi-architecture** support (amd64, arm64)
 - **Multi-user support** via numbered environment variables
+- **Docker secrets support** for secure password handling
 - **Built-in healthcheck** for container orchestration
 - **Backup volume** support
 - **Non-root execution** for security
@@ -32,14 +34,44 @@ volumes:
   anki_data:
 ```
 
+## Using Docker Secrets (recommended for production)
+```yaml
+services:
+  anki-sync-server:
+    image: chrislongros/anki-sync-server-enhanced:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - SYNC_USER1_FILE=/run/secrets/anki_user1
+    secrets:
+      - anki_user1
+    volumes:
+      - anki_data:/data
+    restart: unless-stopped
+
+secrets:
+  anki_user1:
+    file: ./secrets/user1.txt  # Contains: username:password
+
+volumes:
+  anki_data:
+```
+
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SYNC_USER1` to `SYNC_USER99` | User credentials (`username:password`) | Required |
+| `SYNC_USER1_FILE` to `SYNC_USER99_FILE` | Path to file containing credentials | - |
 | `SYNC_BASE` | Data directory | `/data` |
 | `SYNC_HOST` | Listen address | `0.0.0.0` |
 | `SYNC_PORT` | Listen port | `8080` |
+
+## Configuring Anki Desktop
+
+1. Open Anki → Tools → Preferences → Syncing
+2. Set "Self-hosted sync server" to: `http://your-server:8080/`
+3. Log out and log back in with your sync credentials
 
 ## Building Locally
 ```bash
