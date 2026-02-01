@@ -56,13 +56,13 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     py3-boto3 \
-    py3-flask \
+    
     msmtp \
     msmtp-mta \
     fail2ban \
     iptables \
     ip6tables \
-    && pip3 install --break-system-packages argon2-cffi \
+    && pip3 install --break-system-packages flask argon2-cffi \
     && adduser -D -s /bin/bash -h /home/anki -u 1000 anki \
     && mkdir -p /var/log/anki /var/lib/anki /run/fail2ban \
     && touch /var/log/anki/sync.log /var/log/anki/auth.log /var/log/anki/backup.log \
