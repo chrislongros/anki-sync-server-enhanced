@@ -6,6 +6,18 @@ set -e
 # =============================================================================
 
 # -----------------------------------------------------------------------------
+# Handle PUID/PGID for file permissions
+# -----------------------------------------------------------------------------
+PUID=${PUID:-1000}
+PGID=${PGID:-1000}
+
+if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
+    groupmod -o -g "$PGID" anki 2>/dev/null || true
+    usermod -o -u "$PUID" anki 2>/dev/null || true
+    chown -R anki:anki /data /backups /config 2>/dev/null || true
+fi
+
+# -----------------------------------------------------------------------------
 # Configuration with defaults
 # -----------------------------------------------------------------------------
 export SYNC_BASE="${SYNC_BASE:-/data}"
@@ -107,7 +119,7 @@ send_notification() {
 # -----------------------------------------------------------------------------
 shutdown_handler() {
     log_info "Received shutdown signal, stopping gracefully..."
-    send_notification "Server shutting down" "🛑 Anki Sync Server"
+    send_notification "Server shutting down" "Anki Sync Server"
     
     # Kill the sync server process
     if [ -n "$SYNC_PID" ]; then
@@ -271,17 +283,17 @@ printf "║  %-60s ║\n" "Data:        ${SYNC_BASE}"
 printf "║  %-60s ║\n" "Log Level:   ${LOG_LEVEL}"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Features:                                                   ║"
-printf "║    • Backups:     %-42s ║\n" "$([ "$BACKUP_ENABLED" = "true" ] && echo "✓ Enabled ($BACKUP_SCHEDULE)" || echo "✗ Disabled")"
-printf "║    • Metrics:     %-42s ║\n" "$([ "$METRICS_ENABLED" = "true" ] && echo "✓ Enabled (port $METRICS_PORT)" || echo "✗ Disabled")"
-printf "║    • TLS:         %-42s ║\n" "$([ "$TLS_ENABLED" = "true" ] && echo "✓ Enabled" || echo "✗ Disabled")"
-printf "║    • Alerts:      %-42s ║\n" "$([ "$NOTIFY_ENABLED" = "true" ] && echo "✓ Enabled ($NOTIFY_TYPE)" || echo "✗ Disabled")"
+printf "║    - Backups:     %-42s ║\n" "$([ "$BACKUP_ENABLED" = "true" ] && echo "Enabled ($BACKUP_SCHEDULE)" || echo "Disabled")"
+printf "║    - Metrics:     %-42s ║\n" "$([ "$METRICS_ENABLED" = "true" ] && echo "Enabled (port $METRICS_PORT)" || echo "Disabled")"
+printf "║    - TLS:         %-42s ║\n" "$([ "$TLS_ENABLED" = "true" ] && echo "Enabled" || echo "Disabled")"
+printf "║    - Alerts:      %-42s ║\n" "$([ "$NOTIFY_ENABLED" = "true" ] && echo "Enabled ($NOTIFY_TYPE)" || echo "Disabled")"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
 # -----------------------------------------------------------------------------
 # Send startup notification
 # -----------------------------------------------------------------------------
-send_notification "Server started with $USER_COUNT users" "🚀 Anki Sync Server"
+send_notification "Server started with $USER_COUNT users" "Anki Sync Server"
 
 # -----------------------------------------------------------------------------
 # Start the sync server
@@ -304,6 +316,6 @@ wait "$SYNC_PID"
 EXIT_CODE=$?
 
 log_info "Sync server exited with code $EXIT_CODE"
-send_notification "Server stopped (exit code: $EXIT_CODE)" "⚠️ Anki Sync Server"
+send_notification "Server stopped (exit code: $EXIT_CODE)" "Anki Sync Server"
 
 exit $EXIT_CODE

@@ -34,6 +34,7 @@ RUN apk add --no-cache \
     dcron \
     jq \
     netcat-openbsd \
+    shadow \
     && adduser -D -s /bin/false -h /home/anki anki
 
 # Copy binary and version info

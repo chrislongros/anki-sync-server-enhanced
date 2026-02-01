@@ -66,4 +66,4 @@ TOTAL_BACKUP_SIZE=$(du -sh "$BACKUP_DIR" 2>/dev/null | cut -f1 || echo "unknown"
 log "Backup complete. Total backups: $BACKUP_COUNT, Total size: $TOTAL_BACKUP_SIZE"
 
 # Send notification
-notify "✅ Backup complete\nFile: $BACKUP_FILE\nSize: $BACKUP_SIZE\nTotal backups: $BACKUP_COUNT"
+notify "Backup complete\nFile: $BACKUP_FILE\nSize: $BACKUP_SIZE\nTotal backups: $BACKUP_COUNT"

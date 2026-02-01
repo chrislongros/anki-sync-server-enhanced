@@ -8,18 +8,16 @@ Enhanced Docker image for self-hosted Anki sync server, built directly from the 
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| 🔄 **Auto-updated** | Automatically builds latest Anki releases via GitHub Actions |
-| 🖥️ **Multi-architecture** | Supports amd64 and arm64 (Raspberry Pi, Apple Silicon) |
-| 👥 **Multi-user** | Support for up to 99 users via environment variables |
-| 🔐 **Docker secrets** | Secure credential management for production |
-| 💾 **Automated backups** | Scheduled backups with configurable retention |
-| 📊 **Prometheus metrics** | Built-in metrics endpoint for monitoring |
-| 🔔 **Notifications** | Discord, Telegram, Slack alerts for server events |
-| ❤️ **Health checks** | Built-in health monitoring for orchestration |
-| 🛡️ **Non-root** | Runs as unprivileged user for security |
-| 📦 **Small image** | Alpine-based for minimal footprint |
+- **Auto-updated** — Automatically builds latest Anki releases via GitHub Actions
+- **Multi-architecture** — Supports amd64 and arm64 (Raspberry Pi, Apple Silicon)
+- **Multi-user** — Support for up to 99 users via environment variables
+- **Docker secrets** — Secure credential management for production
+- **Automated backups** — Scheduled backups with configurable retention
+- **Prometheus metrics** — Built-in metrics endpoint for monitoring
+- **Notifications** — Discord, Telegram, Slack alerts for server events
+- **Health checks** — Built-in health monitoring for orchestration
+- **Non-root** — Runs as unprivileged user for security
+- **Small image** — Alpine-based for minimal footprint
 
 ## Quick Start
 
@@ -64,6 +62,8 @@ docker-compose up -d
 | `SYNC_BASE` | Data directory | `/data` |
 | `LOG_LEVEL` | Log verbosity (debug/info/warn/error) | `info` |
 | `TZ` | Timezone | `UTC` |
+| `PUID` | User ID for file ownership | `1000` |
+| `PGID` | Group ID for file ownership | `1000` |
 
 #### Backup Configuration
 

@@ -1,162 +1,61 @@
 # =============================================================================
-# Anki Sync Server Enhanced - Docker Compose Configuration
+# Anki Sync Server Enhanced
 # =============================================================================
 # 
-# Quick Start:
-#   1. Copy this file and customize environment variables
+# Usage:
+#   1. Edit environment variables below
 #   2. Run: docker-compose up -d
-#   3. Configure Anki client: Tools → Preferences → Syncing
-#      Set server to: http://your-server:8080/
+#   3. In Anki: Tools > Preferences > Syncing > set server to http://your-ip:8080/
 #
-# Documentation: https://github.com/chrislongros/anki-sync-server-enhanced
 # =============================================================================
 
 services:
   anki-sync-server:
-    # -------------------------------------------------------------------------
-    # Image Configuration
-    # -------------------------------------------------------------------------
     image: chrislongros/anki-sync-server-enhanced:latest
     container_name: anki-sync-server
     
-    # -------------------------------------------------------------------------
-    # Network Configuration
-    # -------------------------------------------------------------------------
     ports:
-      # Main sync server port
       - "8080:8080"
-      # Prometheus metrics port (optional, enable with METRICS_ENABLED=true)
-      # - "9090:9090"
+      # - "9090:9090"  # Uncomment for Prometheus metrics
     
-    # -------------------------------------------------------------------------
-    # Environment Variables
-    # -------------------------------------------------------------------------
     environment:
-      # -----------------------------------------------------------------------
-      # USER CONFIGURATION (Required)
-      # -----------------------------------------------------------------------
-      # Format: SYNC_USERn=username:password
-      # Add as many users as needed (SYNC_USER1 through SYNC_USER99)
+      # Users (required) - format: username:password
       - SYNC_USER1=user1:changeme123
       - SYNC_USER2=user2:changeme456
-      # - SYNC_USER3=user3:password3
       
-      # -----------------------------------------------------------------------
-      # SERVER CONFIGURATION
-      # -----------------------------------------------------------------------
-      # Listen address (0.0.0.0 = all interfaces)
+      # Server
       - SYNC_HOST=0.0.0.0
-      # Listen port
       - SYNC_PORT=8080
-      # Data directory inside container
       - SYNC_BASE=/data
-      
-      # -----------------------------------------------------------------------
-      # LOGGING CONFIGURATION
-      # -----------------------------------------------------------------------
-      # Log level: debug, info, warn, error
       - LOG_LEVEL=info
-      
-      # -----------------------------------------------------------------------
-      # TIMEZONE CONFIGURATION
-      # -----------------------------------------------------------------------
-      # Set timezone for logs and backups
       - TZ=Europe/Berlin
       
-      # -----------------------------------------------------------------------
-      # BACKUP CONFIGURATION
-      # -----------------------------------------------------------------------
-      # Enable automated backups
+      # File permissions (match your host user)
+      - PUID=1000
+      - PGID=1000
+      
+      # Backups
       - BACKUP_ENABLED=true
-      # Backup schedule (cron format)
-      # Default: 3 AM daily
       - BACKUP_SCHEDULE=0 3 * * *
-      # How many days to keep backups
       - BACKUP_RETENTION_DAYS=7
       
-      # -----------------------------------------------------------------------
-      # METRICS CONFIGURATION (Prometheus)
-      # -----------------------------------------------------------------------
-      # Enable Prometheus metrics endpoint
+      # Metrics (Prometheus)
       - METRICS_ENABLED=false
-      # Metrics port (expose in ports section if enabled)
       - METRICS_PORT=9090
       
-      # -----------------------------------------------------------------------
-      # TLS CONFIGURATION
-      # -----------------------------------------------------------------------
-      # Note: For TLS, we recommend using a reverse proxy (Traefik, nginx)
-      # Native TLS support is planned for future releases
-      - TLS_ENABLED=false
-      # - TLS_CERT=/config/cert.pem
-      # - TLS_KEY=/config/key.pem
-      
-      # -----------------------------------------------------------------------
-      # NOTIFICATION CONFIGURATION
-      # -----------------------------------------------------------------------
-      # Enable notifications for server events
+      # Notifications (discord/telegram/slack/generic)
       - NOTIFY_ENABLED=false
-      # Notification type: discord, telegram, slack, generic
       - NOTIFY_TYPE=discord
-      # Webhook URL for notifications
-      # Discord: https://discord.com/api/webhooks/xxx/yyy
-      # Telegram: https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<CHAT_ID>
-      # Slack: https://hooks.slack.com/services/xxx/yyy/zzz
-      # - NOTIFY_WEBHOOK_URL=https://discord.com/api/webhooks/your-webhook-url
+      # - NOTIFY_WEBHOOK_URL=https://discord.com/api/webhooks/...
     
-    # -------------------------------------------------------------------------
-    # Volume Configuration
-    # -------------------------------------------------------------------------
     volumes:
-      # User data (Anki collections) - REQUIRED
       - anki_data:/data
-      
-      # Backup storage - RECOMMENDED
       - anki_backups:/backups
-      
-      # Configuration files (TLS certs, etc.) - OPTIONAL
-      # - ./config:/config:ro
     
-    # -------------------------------------------------------------------------
-    # Container Configuration
-    # -------------------------------------------------------------------------
     restart: unless-stopped
-    
-    # Resource limits (optional, adjust based on your needs)
-    # deploy:
-    #   resources:
-    #     limits:
-    #       cpus: '1.0'
-    #       memory: 512M
-    #     reservations:
-    #       cpus: '0.25'
-    #       memory: 128M
-    
-    # Health check is built into the image, but can be customized:
-    # healthcheck:
-    #   test: ["CMD", "/usr/local/bin/healthcheck.sh"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
-    #   start_period: 10s
 
-# =============================================================================
-# Volume Definitions
-# =============================================================================
 volumes:
-  # Persistent storage for user data
   anki_data:
     name: anki_sync_data
-  
-  # Persistent storage for backups
   anki_backups:
     name: anki_sync_backups
-
-# =============================================================================
-# Network Configuration (Optional)
-# =============================================================================
-# Uncomment to use a custom network
-# networks:
-#   default:
-#     name: anki-network
-#     external: true
