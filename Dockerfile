@@ -1,20 +1,6 @@
 # =============================================================================
 # Anki Sync Server Enhanced - Comprehensive Docker Image
 # =============================================================================
-# Features:
-# - Auto-version detection from GitHub
-# - Multi-architecture (amd64, arm64, arm/v7)
-# - Multi-user with hashed password support
-# - Docker secrets support
-# - Automated backups with S3 upload
-# - Prometheus metrics
-# - Web dashboard
-# - Email/webhook notifications
-# - Rate limiting
-# - Fail2ban
-# - Sync logging
-# - User management CLI
-# =============================================================================
 
 FROM rustlang/rust:nightly-slim AS builder
 
@@ -42,31 +28,20 @@ FROM alpine:3.21
 
 # Install runtime dependencies
 RUN apk add --no-cache \
-    ca-certificates \
-    wget \
-    curl \
-    bash \
-    tzdata \
-    sqlite \
-    openssl \
-    dcron \
-    jq \
-    netcat-openbsd \
-    shadow \
-    python3 \
-    py3-pip \
-    py3-boto3 \
-    
-    msmtp \
-    msmtp-mta \
-    fail2ban \
-    iptables \
-    ip6tables \
-    && pip3 install --break-system-packages flask argon2-cffi \
-    && adduser -D -s /bin/bash -h /home/anki -u 1000 anki \
-    && mkdir -p /var/log/anki /var/lib/anki /run/fail2ban \
+    ca-certificates wget curl bash tzdata sqlite openssl \
+    jq netcat-openbsd shadow python3 py3-pip
+
+# Install optional packages (may not exist on all architectures)
+RUN apk add --no-cache dcron msmtp || true
+
+# Install Python packages
+RUN pip3 install --break-system-packages --no-cache-dir flask boto3 argon2-cffi
+
+# Create user and directories
+RUN adduser -D -s /bin/bash -h /home/anki -u 1000 anki \
+    && mkdir -p /var/log/anki /var/lib/anki /data /backups /config \
     && touch /var/log/anki/sync.log /var/log/anki/auth.log /var/log/anki/backup.log \
-    && chown -R anki:anki /var/log/anki /var/lib/anki
+    && chown -R anki:anki /var/log/anki /var/lib/anki /data /backups /config /home/anki
 
 # Copy binary and version info
 COPY --from=builder /usr/local/cargo/bin/anki-sync-server /usr/local/bin/
@@ -76,26 +51,13 @@ COPY --from=builder /anki_version.txt /anki_version.txt
 COPY scripts/ /usr/local/bin/
 COPY dashboard.py /usr/local/bin/dashboard.py
 
-# Copy fail2ban config
-COPY fail2ban/ /etc/fail2ban/
+RUN chmod +x /usr/local/bin/*.sh /usr/local/bin/*.py 2>/dev/null || true
 
-RUN chmod +x /usr/local/bin/*.sh /usr/local/bin/*.py \
-    && mkdir -p /data /backups /config \
-    && chown -R anki:anki /data /backups /config /home/anki
-
-# Ports
-# 8080 - Anki sync server
-# 9090 - Prometheus metrics
-# 8081 - Web dashboard
 EXPOSE 8080 9090 8081
-
 VOLUME ["/data", "/backups", "/config"]
 
-# Watchtower labels
 LABEL com.centurylinklabs.watchtower.enable="true"
 LABEL org.opencontainers.image.source="https://github.com/chrislongros/anki-sync-server-enhanced"
-LABEL org.opencontainers.image.description="Self-hosted Anki sync server with backups, metrics, dashboard, and notifications"
-LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD /usr/local/bin/healthcheck.sh
