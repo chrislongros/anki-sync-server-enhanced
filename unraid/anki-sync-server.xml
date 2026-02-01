@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>anki-sync-server</Name>
+  <Repository>chrislongros/anki-sync-server-enhanced:latest</Repository>
+  <Registry>https://hub.docker.com/r/chrislongros/anki-sync-server-enhanced</Registry>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/chrislongros/anki-sync-server-enhanced/issues</Support>
+  <Project>https://github.com/chrislongros/anki-sync-server-enhanced</Project>
+  <Overview>
+    Self-hosted Anki sync server with automated backups, Prometheus metrics, and notifications.
+    Built from the official Anki source code with additional features for self-hosters.
+    
+    Features:
+    - Multi-user support
+    - Automated backups with retention
+    - Prometheus metrics endpoint
+    - Discord/Telegram/Slack notifications
+    - Health checks
+    - Non-root execution
+  </Overview>
+  <Category>Productivity: Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/chrislongros/anki-sync-server-enhanced/main/unraid/anki-sync-server.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/ankitects/anki/main/qt/aqt/data/web/imgs/anki-logo-thin.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  
+  <Config Name="Web UI Port" Target="8080" Default="8080" Mode="tcp" Description="Sync server port" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  
+  <Config Name="User 1" Target="SYNC_USER1" Default="user:password" Mode="" Description="First user credentials (username:password)" Type="Variable" Display="always" Required="true" Mask="false">user:password</Config>
+  
+  <Config Name="User 2" Target="SYNC_USER2" Default="" Mode="" Description="Second user credentials (optional)" Type="Variable" Display="always" Required="false" Mask="false"/>
+  
+  <Config Name="User 3" Target="SYNC_USER3" Default="" Mode="" Description="Third user credentials (optional)" Type="Variable" Display="always" Required="false" Mask="false"/>
+  
+  <Config Name="Timezone" Target="TZ" Default="UTC" Mode="" Description="Container timezone" Type="Variable" Display="always" Required="false" Mask="false">UTC</Config>
+  
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  
+  <Config Name="Enable Backups" Target="BACKUP_ENABLED" Default="true" Mode="" Description="Enable automated backups" Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+  
+  <Config Name="Backup Schedule" Target="BACKUP_SCHEDULE" Default="0 3 * * *" Mode="" Description="Cron schedule for backups" Type="Variable" Display="advanced" Required="false" Mask="false">0 3 * * *</Config>
+  
+  <Config Name="Backup Retention Days" Target="BACKUP_RETENTION_DAYS" Default="7" Mode="" Description="Days to keep old backups" Type="Variable" Display="advanced" Required="false" Mask="false">7</Config>
+  
+  <Config Name="Enable Metrics" Target="METRICS_ENABLED" Default="false" Mode="" Description="Enable Prometheus metrics endpoint" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  
+  <Config Name="Metrics Port" Target="METRICS_PORT" Default="9090" Mode="" Description="Prometheus metrics port" Type="Variable" Display="advanced" Required="false" Mask="false">9090</Config>
+  
+  <Config Name="Enable Notifications" Target="NOTIFY_ENABLED" Default="false" Mode="" Description="Enable Discord/Telegram/Slack notifications" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  
+  <Config Name="Notification Type" Target="NOTIFY_TYPE" Default="discord" Mode="" Description="Notification service (discord/telegram/slack)" Type="Variable" Display="advanced" Required="false" Mask="false">discord</Config>
+  
+  <Config Name="Webhook URL" Target="NOTIFY_WEBHOOK_URL" Default="" Mode="" Description="Webhook URL for notifications" Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  
+  <Config Name="Log Level" Target="LOG_LEVEL" Default="info" Mode="" Description="Log level (debug/info/warn/error)" Type="Variable" Display="advanced" Required="false" Mask="false">info</Config>
+  
+  <Config Name="Data Path" Target="/data" Default="/mnt/user/appdata/anki-sync-server/data" Mode="rw" Description="Path for Anki sync data" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/anki-sync-server/data</Config>
+  
+  <Config Name="Backups Path" Target="/backups" Default="/mnt/user/appdata/anki-sync-server/backups" Mode="rw" Description="Path for backup storage" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/anki-sync-server/backups</Config>
+</Container>

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: anki-sync-server
+version: 1.0.0
+appVersion: "25.09.2"
+description: Self-hosted Anki sync server with backups, metrics, and notifications
+type: application
+keywords:
+  - anki
+  - sync
+  - flashcards
+  - spaced-repetition
+  - education
+home: https://github.com/chrislongros/anki-sync-server-enhanced
+sources:
+  - https://github.com/chrislongros/anki-sync-server-enhanced
+  - https://github.com/ankitects/anki
+maintainers:
+  - name: chrislongros
+    url: https://github.com/chrislongros
+icon: https://raw.githubusercontent.com/ankitects/anki/main/qt/aqt/data/web/imgs/anki-logo-thin.png

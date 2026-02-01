@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "anki-sync-server.fullname" . }}
+  labels:
+    {{- include "anki-sync-server.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "anki-sync-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "anki-sync-server.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.port }}
+              protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          env:
+            {{- range $index, $user := .Values.users }}
+            - name: SYNC_USER{{ add $index 1 }}
+              value: {{ $user | quote }}
+            {{- end }}
+            - name: SYNC_HOST
+              value: "0.0.0.0"
+            - name: SYNC_PORT
+              value: {{ .Values.server.port | quote }}
+            - name: SYNC_BASE
+              value: "/data"
+            - name: LOG_LEVEL
+              value: {{ .Values.server.logLevel | quote }}
+            - name: TZ
+              value: {{ .Values.timezone | quote }}
+            - name: PUID
+              value: {{ .Values.permissions.puid | quote }}
+            - name: PGID
+              value: {{ .Values.permissions.pgid | quote }}
+            - name: BACKUP_ENABLED
+              value: {{ .Values.backup.enabled | quote }}
+            - name: BACKUP_SCHEDULE
+              value: {{ .Values.backup.schedule | quote }}
+            - name: BACKUP_RETENTION_DAYS
+              value: {{ .Values.backup.retentionDays | quote }}
+            - name: METRICS_ENABLED
+              value: {{ .Values.metrics.enabled | quote }}
+            - name: METRICS_PORT
+              value: {{ .Values.metrics.port | quote }}
+            - name: NOTIFY_ENABLED
+              value: {{ .Values.notifications.enabled | quote }}
+            - name: NOTIFY_TYPE
+              value: {{ .Values.notifications.type | quote }}
+            {{- if .Values.notifications.webhookUrl }}
+            - name: NOTIFY_WEBHOOK_URL
+              value: {{ .Values.notifications.webhookUrl | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: backups
+              mountPath: /backups
+          {{- if .Values.healthcheck.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: {{ .Values.healthcheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthcheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.healthcheck.timeoutSeconds }}
+            failureThreshold: {{ .Values.healthcheck.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: {{ .Values.healthcheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthcheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.healthcheck.timeoutSeconds }}
+            failureThreshold: {{ .Values.healthcheck.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.data.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "anki-sync-server.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: backups
+          {{- if .Values.persistence.backups.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "anki-sync-server.fullname" . }}-backups
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

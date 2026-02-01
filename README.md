@@ -4,7 +4,23 @@
 [![GitHub Actions](https://github.com/chrislongros/anki-sync-server-enhanced/actions/workflows/build.yml/badge.svg)](https://github.com/chrislongros/anki-sync-server-enhanced/actions)
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-available-blue)](https://ghcr.io/chrislongros/anki-sync-server-enhanced)
 
-Enhanced Docker image for self-hosted Anki sync server, built directly from the official [Anki source code](https://github.com/ankitects/anki).
+A production-ready Docker image for self-hosted Anki sync server. Built from the official [Anki source code](https://github.com/ankitects/anki) with additional features for reliability and monitoring.
+
+## Why This Image?
+
+The official Anki project provides source code but no pre-built Docker image. This project fills that gap.
+
+| Feature | Build from source | This image |
+|---------|-------------------|------------|
+| Pre-built Docker image | No | Yes |
+| Auto-updates to latest Anki | Manual | Daily via GitHub Actions |
+| Multi-arch (amd64, arm64) | Manual setup | Included |
+| Automated backups | No | Yes, with retention policy |
+| Prometheus metrics | No | Yes |
+| Discord/Telegram/Slack alerts | No | Yes |
+| Docker secrets support | No | Yes |
+| Health check endpoint | Yes | Yes |
+| PUID/PGID support | Partial | Yes |
 
 ## Features
 
@@ -21,6 +37,17 @@ Enhanced Docker image for self-hosted Anki sync server, built directly from the 
 
 ## Quick Start
 
+```bash
+docker run -d \
+  --name anki-sync-server \
+  -p 8080:8080 \
+  -e SYNC_USER1=user:password \
+  -v anki_data:/data \
+  chrislongros/anki-sync-server-enhanced:latest
+```
+
+Or with docker-compose:
+
 ```yaml
 services:
   anki-sync-server:
@@ -36,10 +63,6 @@ services:
 
 volumes:
   anki_data:
-```
-
-```bash
-docker-compose up -d
 ```
 
 ## Configuration
@@ -229,6 +252,23 @@ This image is available from:
 
 - **Docker Hub**: `chrislongros/anki-sync-server-enhanced`
 - **GitHub Container Registry**: `ghcr.io/chrislongros/anki-sync-server-enhanced`
+
+## NAS Installation
+
+### TrueNAS SCALE
+
+See [truenas/README.md](truenas/README.md) for installation options:
+- Custom App (easiest)
+- Helm chart
+- docker-compose
+
+### Unraid
+
+1. Go to Docker tab
+2. Click "Add Container"
+3. Use template from [unraid/anki-sync-server.xml](unraid/anki-sync-server.xml)
+
+Or install via Community Apps (search "anki sync server").
 
 ## Credits
 

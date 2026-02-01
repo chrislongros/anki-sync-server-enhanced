@@ -1,0 +1,88 @@
+# Anki Sync Server Enhanced - TrueNAS SCALE Configuration
+
+image:
+  repository: chrislongros/anki-sync-server-enhanced
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# User configuration (required)
+# Add users in format: username:password
+users:
+  - user1:changeme123
+  # - user2:password2
+  # - user3:password3
+
+# Server configuration
+server:
+  port: 8080
+  logLevel: info  # debug, info, warn, error
+
+# Timezone
+timezone: "UTC"
+
+# File permissions
+permissions:
+  puid: 568
+  pgid: 568
+
+# Backup configuration
+backup:
+  enabled: true
+  schedule: "0 3 * * *"  # 3 AM daily (cron format)
+  retentionDays: 7
+
+# Prometheus metrics
+metrics:
+  enabled: false
+  port: 9090
+
+# Notifications
+notifications:
+  enabled: false
+  type: discord  # discord, telegram, slack, generic
+  webhookUrl: ""
+
+# Persistence
+persistence:
+  data:
+    enabled: true
+    size: 10Gi
+    storageClass: ""  # Leave empty for default
+  backups:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8080
+
+# Ingress (optional)
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: anki.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Resource limits
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Health checks
+healthcheck:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3

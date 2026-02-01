@@ -1,0 +1,234 @@
+groups:
+  - name: "User Configuration"
+    description: "Configure sync users"
+  - name: "Server Configuration"
+    description: "Configure server settings"
+  - name: "Backup Configuration"
+    description: "Configure automated backups"
+  - name: "Monitoring"
+    description: "Configure metrics and notifications"
+  - name: "Storage"
+    description: "Configure persistent storage"
+  - name: "Network"
+    description: "Configure network settings"
+
+questions:
+  # User Configuration
+  - variable: users
+    label: "Sync Users"
+    description: "List of users in format username:password"
+    group: "User Configuration"
+    schema:
+      type: list
+      default:
+        - "user1:changeme"
+      items:
+        - variable: user
+          label: "User (username:password)"
+          schema:
+            type: string
+            required: true
+
+  # Server Configuration
+  - variable: timezone
+    label: "Timezone"
+    description: "Container timezone"
+    group: "Server Configuration"
+    schema:
+      type: string
+      default: "UTC"
+      $ref:
+        - "definitions/timezone"
+
+  - variable: server.logLevel
+    label: "Log Level"
+    description: "Logging verbosity"
+    group: "Server Configuration"
+    schema:
+      type: string
+      default: "info"
+      enum:
+        - value: "debug"
+          description: "Debug"
+        - value: "info"
+          description: "Info"
+        - value: "warn"
+          description: "Warning"
+        - value: "error"
+          description: "Error"
+
+  - variable: permissions.puid
+    label: "PUID"
+    description: "User ID for file permissions"
+    group: "Server Configuration"
+    schema:
+      type: int
+      default: 568
+
+  - variable: permissions.pgid
+    label: "PGID"
+    description: "Group ID for file permissions"
+    group: "Server Configuration"
+    schema:
+      type: int
+      default: 568
+
+  # Backup Configuration
+  - variable: backup.enabled
+    label: "Enable Automated Backups"
+    description: "Enable scheduled backups"
+    group: "Backup Configuration"
+    schema:
+      type: boolean
+      default: true
+
+  - variable: backup.schedule
+    label: "Backup Schedule"
+    description: "Cron schedule for backups (default: 3 AM daily)"
+    group: "Backup Configuration"
+    schema:
+      type: string
+      default: "0 3 * * *"
+      show_if: [["backup.enabled", "=", true]]
+
+  - variable: backup.retentionDays
+    label: "Backup Retention (Days)"
+    description: "Number of days to keep old backups"
+    group: "Backup Configuration"
+    schema:
+      type: int
+      default: 7
+      min: 1
+      show_if: [["backup.enabled", "=", true]]
+
+  # Monitoring
+  - variable: metrics.enabled
+    label: "Enable Prometheus Metrics"
+    description: "Enable metrics endpoint for monitoring"
+    group: "Monitoring"
+    schema:
+      type: boolean
+      default: false
+
+  - variable: metrics.port
+    label: "Metrics Port"
+    description: "Port for Prometheus metrics endpoint"
+    group: "Monitoring"
+    schema:
+      type: int
+      default: 9090
+      show_if: [["metrics.enabled", "=", true]]
+
+  - variable: notifications.enabled
+    label: "Enable Notifications"
+    description: "Enable Discord/Telegram/Slack notifications"
+    group: "Monitoring"
+    schema:
+      type: boolean
+      default: false
+
+  - variable: notifications.type
+    label: "Notification Type"
+    description: "Notification service to use"
+    group: "Monitoring"
+    schema:
+      type: string
+      default: "discord"
+      show_if: [["notifications.enabled", "=", true]]
+      enum:
+        - value: "discord"
+          description: "Discord"
+        - value: "telegram"
+          description: "Telegram"
+        - value: "slack"
+          description: "Slack"
+        - value: "generic"
+          description: "Generic Webhook"
+
+  - variable: notifications.webhookUrl
+    label: "Webhook URL"
+    description: "Webhook URL for notifications"
+    group: "Monitoring"
+    schema:
+      type: string
+      default: ""
+      show_if: [["notifications.enabled", "=", true]]
+
+  # Storage
+  - variable: persistence.data.size
+    label: "Data Storage Size"
+    description: "Size of persistent storage for Anki data"
+    group: "Storage"
+    schema:
+      type: string
+      default: "10Gi"
+
+  - variable: persistence.backups.size
+    label: "Backup Storage Size"
+    description: "Size of persistent storage for backups"
+    group: "Storage"
+    schema:
+      type: string
+      default: "5Gi"
+
+  # Network
+  - variable: service.port
+    label: "Service Port"
+    description: "Port to expose the sync server"
+    group: "Network"
+    schema:
+      type: int
+      default: 8080
+      min: 1
+      max: 65535
+
+  - variable: ingress.enabled
+    label: "Enable Ingress"
+    description: "Enable ingress for external access"
+    group: "Network"
+    schema:
+      type: boolean
+      default: false
+
+  - variable: ingress.hosts
+    label: "Ingress Hosts"
+    description: "Hostnames for ingress"
+    group: "Network"
+    schema:
+      type: list
+      show_if: [["ingress.enabled", "=", true]]
+      default: []
+      items:
+        - variable: host
+          label: "Hostname"
+          schema:
+            type: dict
+            attrs:
+              - variable: host
+                label: "Host"
+                schema:
+                  type: string
+                  required: true
+              - variable: paths
+                label: "Paths"
+                schema:
+                  type: list
+                  default:
+                    - path: "/"
+                      pathType: "Prefix"
+                  items:
+                    - variable: pathEntry
+                      label: "Path Entry"
+                      schema:
+                        type: dict
+                        attrs:
+                          - variable: path
+                            label: "Path"
+                            schema:
+                              type: string
+                              default: "/"
+                          - variable: pathType
+                            label: "Path Type"
+                            schema:
+                              type: string
+                              default: "Prefix"
