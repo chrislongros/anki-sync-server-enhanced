@@ -277,7 +277,7 @@ setup_backups() {
         log_info "Setting up automated backups (schedule: $BACKUP_SCHEDULE)"
         
         # Create cron job
-        echo "$BACKUP_SCHEDULE /usr/local/bin/backup.sh >> /var/log/anki/backup.log 2>&1" > /etc/crontabs/root
+        mkdir -p /var/spool/cron/crontabs && echo "$BACKUP_SCHEDULE /usr/local/bin/backup.sh >> /var/log/anki/backup.log 2>&1" > /var/spool/cron/crontabs/root
         
         # Start cron daemon
         crond -b -l 8
