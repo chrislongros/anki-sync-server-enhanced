@@ -7,6 +7,9 @@
 
 Production-ready Docker image for self-hosted Anki sync server with backups, monitoring, dashboard, and security features.
 
+![Dashboard](docs/dashboard.png)
+
+
 ## Why This Image?
 
 The official Anki project provides sync server source code but no pre-built Docker images. This project provides:
