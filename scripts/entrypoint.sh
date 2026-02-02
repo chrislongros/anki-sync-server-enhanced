@@ -280,7 +280,7 @@ setup_backups() {
         mkdir -p /var/spool/cron/crontabs && echo "$BACKUP_SCHEDULE /usr/local/bin/backup.sh >> /var/log/anki/backup.log 2>&1" > /var/spool/cron/crontabs/root
         
         # Start cron daemon
-        crond -b -l 8
+        cron -b -l 8
         log_info "Backup cron started"
     fi
 }
@@ -448,7 +448,7 @@ shutdown_handler() {
     [ -n "$METRICS_PID" ] && kill -TERM "$METRICS_PID" 2>/dev/null
     
     # Stop services
-    pkill crond 2>/dev/null || true
+    pkill cron 2>/dev/null || true
     pkill fail2ban 2>/dev/null || true
     
     # Wait for sync server
