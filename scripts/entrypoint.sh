@@ -280,7 +280,7 @@ setup_backups() {
         mkdir -p /var/spool/cron/crontabs && echo "$BACKUP_SCHEDULE /usr/local/bin/backup.sh >> /var/log/anki/backup.log 2>&1" > /var/spool/cron/crontabs/root
         
         # Start cron daemon
-        cron -b -l 8
+        cron
         log_info "Backup cron started"
     fi
 }
