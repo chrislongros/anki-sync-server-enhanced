@@ -76,6 +76,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Update Docker Hub description
+        continue-on-error: true
         if: github.event_name != 'pull_request'
         uses: peter-evans/dockerhub-description@v3
         with:
