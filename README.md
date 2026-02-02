@@ -3,27 +3,37 @@
 [![Docker Hub](https://img.shields.io/docker/pulls/chrislongros/anki-sync-server-enhanced)](https://hub.docker.com/r/chrislongros/anki-sync-server-enhanced)
 [![GitHub Actions](https://github.com/chrislongros/anki-sync-server-enhanced/actions/workflows/build.yml/badge.svg)](https://github.com/chrislongros/anki-sync-server-enhanced/actions)
 [![GHCR](https://img.shields.io/badge/ghcr.io-available-blue)](https://ghcr.io/chrislongros/anki-sync-server-enhanced)
+[![Anki Version](https://img.shields.io/badge/anki-auto--updated-green)](https://github.com/ankitects/anki/releases)
 
 Production-ready Docker image for self-hosted Anki sync server with backups, monitoring, dashboard, and security features.
+
+## Why This Image?
+
+The official Anki project provides sync server source code but no pre-built Docker images. This project provides:
+
+- **Zero build time** - Pre-compiled for amd64, arm64, and arm/v7
+- **Auto-updates** - Daily builds automatically track the latest Anki release
+- **Enterprise features** - Backups, monitoring, alerts, and security out of the box
+- **NAS-ready** - Works on TrueNAS SCALE, Unraid, Synology, and any Docker host
 
 ## Features
 
 | Feature | This Image |
 |---------|------------|
-| Pre-built Docker image | Yes |
-| Auto-updates (daily builds) | Yes |
-| Multi-arch (amd64, arm64, arm/v7) | Yes |
-| Automated backups with retention | Yes |
-| S3/MinIO backup upload | Yes |
-| Prometheus metrics | Yes |
-| Web dashboard | Yes |
-| Discord/Telegram/Slack/Email alerts | Yes |
-| Docker secrets support | Yes |
-| Hashed passwords | Yes |
-| Fail2ban integration | Yes |
-| Rate limiting | Yes |
-| User management CLI | Yes |
-| PUID/PGID support | Yes |
+| Pre-built Docker image | ✅ |
+| Auto-updates (daily builds) | ✅ |
+| Multi-arch (amd64, arm64, arm/v7) | ✅ |
+| Automated backups with retention | ✅ |
+| S3/MinIO backup upload | ✅ |
+| Prometheus metrics | ✅ |
+| Web dashboard | ✅ |
+| Discord/Telegram/Slack/Email alerts | ✅ |
+| Docker secrets support | ✅ |
+| Hashed passwords | ✅ |
+| Fail2ban integration | ✅ |
+| Rate limiting | ✅ |
+| User management CLI | ✅ |
+| PUID/PGID support | ✅ |
 
 ## Quick Start
 
@@ -36,12 +46,15 @@ docker run -d \
   chrislongros/anki-sync-server-enhanced
 ```
 
+Then configure your Anki client to sync to `http://your-server:8080/`
+
 ## Docker Compose
 
 ```yaml
 services:
   anki-sync-server:
     image: chrislongros/anki-sync-server-enhanced:latest
+    container_name: anki-sync
     ports:
       - "8080:8080"   # Sync server
       - "8081:8081"   # Dashboard (optional)
@@ -62,6 +75,24 @@ volumes:
   anki_data:
   anki_backups:
 ```
+
+## Web Dashboard
+
+Enable with `DASHBOARD_ENABLED=true` and access at `http://server:8081/`
+
+**Features:**
+- **Overview** - Server status, uptime, user count, data size, sync operations
+- **Users** - Per-user statistics with data size and last sync time
+- **Backups** - List backups, create new backups with one click
+- **Logs** - View sync, auth, and backup logs with color-coded entries
+- **System** - Disk usage, memory usage, load average
+
+Protect with basic auth using `DASHBOARD_AUTH=admin:password`
+
+<!-- 
+Screenshot placeholder - add actual screenshot
+![Dashboard Screenshot](docs/dashboard.png)
+-->
 
 ## Configuration Reference
 
@@ -139,6 +170,7 @@ docker exec anki-sync user-manager.sh add john
 docker exec anki-sync user-manager.sh add john mypassword
 docker exec anki-sync user-manager.sh reset john newpass
 docker exec anki-sync user-manager.sh hash mypassword
+docker exec anki-sync user-manager.sh stats
 
 # Backup management
 docker exec anki-sync backup.sh
@@ -150,28 +182,47 @@ docker exec anki-sync restore.sh --s3 backup_file.tar.gz
 
 ## Client Configuration
 
-**Desktop:** Tools > Preferences > Syncing > `http://server:8080/`
+### Desktop (Windows/Mac/Linux)
 
-**AnkiDroid:** Settings > Sync > Custom server > `http://server:8080/`
+1. Open Anki
+2. Go to **Tools → Preferences → Syncing**
+3. Set custom sync server to: `http://your-server:8080/`
+4. Click **Sync** and enter your credentials
 
-**AnkiMobile:** Settings > Sync > Custom server > `http://server:8080/`
+### AnkiDroid (Android)
+
+1. Open AnkiDroid
+2. Go to **Settings → Sync → Custom sync server**
+3. Set sync URL: `http://your-server:8080/`
+4. Set media URL: `http://your-server:8080/msync/`
+5. Sync with your credentials
+
+### AnkiMobile (iOS)
+
+1. Open AnkiMobile
+2. Go to **Settings → Sync → Custom server**
+3. Enter: `http://your-server:8080/`
+4. Sync with your credentials
+
+> **Tip:** Use HTTPS with a reverse proxy (Traefik, Caddy, nginx) for secure remote access. See [docker-compose.traefik.yml](docker-compose.traefik.yml) for an example.
 
 ## Prometheus Metrics
 
-Available at `http://server:9090/metrics`:
+Available at `http://server:9090/metrics` when `METRICS_ENABLED=true`:
 
-- `anki_sync_users_total` - User count
-- `anki_sync_data_bytes` - Data size
-- `anki_sync_backup_count` - Backup count
-- `anki_sync_uptime_seconds` - Uptime
-- `anki_auth_success_total` - Auth successes
-- `anki_auth_failed_total` - Auth failures
-
-## Web Dashboard
-
-Access at `http://server:8081/` (when enabled). Shows server status, users, backups, and statistics.
+| Metric | Description |
+|--------|-------------|
+| `anki_sync_users_total` | Configured user count |
+| `anki_sync_data_bytes` | Total data size |
+| `anki_sync_backup_count` | Number of backups |
+| `anki_sync_uptime_seconds` | Server uptime |
+| `anki_sync_operations_total` | Total sync operations |
+| `anki_auth_success_total` | Successful logins |
+| `anki_auth_failed_total` | Failed logins |
 
 ## Docker Secrets
+
+For secure credential management:
 
 ```yaml
 services:
@@ -189,25 +240,51 @@ secrets:
 
 ## Image Sources
 
-- Docker Hub: `chrislongros/anki-sync-server-enhanced`
-- GHCR: `ghcr.io/chrislongros/anki-sync-server-enhanced`
+| Registry | Image |
+|----------|-------|
+| Docker Hub | `chrislongros/anki-sync-server-enhanced` |
+| GitHub Container Registry | `ghcr.io/chrislongros/anki-sync-server-enhanced` |
 
 ## NAS Installation
 
 - **TrueNAS SCALE:** See [truenas/README.md](truenas/README.md)
 - **Unraid:** Use [unraid/anki-sync-server.xml](unraid/anki-sync-server.xml)
 
-## Building
+## Troubleshooting
+
+**Can't connect to server:**
+- Ensure port 8080 is exposed and not blocked by firewall
+- Check container logs: `docker logs anki-sync`
+- Verify the sync URL ends with `/` (e.g., `http://server:8080/`)
+
+**Sync fails with large collections:**
+- If using a reverse proxy, increase `client_max_body_size` (nginx) or equivalent
+- Set `MAX_SYNC_PAYLOAD_MEGS` environment variable if needed
+
+**Authentication issues:**
+- Ensure username doesn't contain special characters
+- Check auth log: `docker exec anki-sync cat /var/log/anki/auth.log`
+- Try resetting password: `docker exec anki-sync user-manager.sh reset username newpassword`
+
+**Dashboard not loading:**
+- Ensure `DASHBOARD_ENABLED=true` is set
+- Check port 8081 is exposed
+- View logs: `docker logs anki-sync | grep dashboard`
+
+## Building Locally
 
 ```bash
+# Auto-detect latest Anki version
 docker build -t anki-sync-server-enhanced .
+
+# Specify version
 docker build --build-arg ANKI_VERSION=25.09.2 -t anki-sync-server-enhanced .
 ```
 
 ## Credits
 
-Built from the official [Anki](https://github.com/ankitects/anki) project.
+Built from the official [Anki](https://github.com/ankitects/anki) sync server by Ankitects.
 
 ## License
 
-AGPL-3.0
+AGPL-3.0 - see [LICENSE](LICENSE)
