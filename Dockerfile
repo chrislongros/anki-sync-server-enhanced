@@ -49,7 +49,6 @@ COPY --from=builder /anki_version.txt /anki_version.txt
 
 # Copy all scripts
 COPY scripts/ /usr/local/bin/
-COPY dashboard.py /usr/local/bin/dashboard.py
 
 RUN chmod +x /usr/local/bin/*.sh /usr/local/bin/*.py 2>/dev/null || true
 
