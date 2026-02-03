@@ -217,77 +217,63 @@ setup_tls() {
     local CADDYFILE="/config/caddy/Caddyfile"
     mkdir -p /config/caddy
 
-    # Determine TLS configuration
-    if [ -n "$TLS_CERT" ] && [ -n "$TLS_KEY" ] && [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ]; then
-        # Manual certificates provided
-        log_info "Using provided TLS certificates"
-        TLS_CONFIG="tls $TLS_CERT $TLS_KEY"
-        LISTEN_ADDR=":${TLS_PORT}"
-    elif [ -n "$TLS_DOMAIN" ]; then
-        # Auto HTTPS with Let's Encrypt
-        if [ -n "$TLS_EMAIL" ]; then
-            log_info "Using Let's Encrypt for $TLS_DOMAIN (email: $TLS_EMAIL)"
-            TLS_CONFIG="tls $TLS_EMAIL"
-        else
-            log_info "Using Let's Encrypt for $TLS_DOMAIN (no email)"
-            TLS_CONFIG="tls"
-        fi
-        LISTEN_ADDR="$TLS_DOMAIN"
-    else
-        # Self-signed certificate
-        log_info "Using self-signed certificate (set TLS_DOMAIN for Let's Encrypt)"
-        TLS_CONFIG="tls internal"
-        LISTEN_ADDR=":${TLS_PORT}"
-    fi
-
-    # Generate Caddyfile
-    cat > "$CADDYFILE" << EOF
+    # Generate Caddyfile based on mode
+    if [ -n "$TLS_DOMAIN" ]; then
+        # Let's Encrypt mode
+        log_info "Using Let's Encrypt for $TLS_DOMAIN"
+        log_info "Generating Caddyfile for Let's Encrypt (domain: $TLS_DOMAIN)"
+        cat > "$CADDYFILE" << EOF
 {
-    # Global options
     admin off
-    auto_https off
+    auto_https disable_redirects
+    email ${TLS_EMAIL:-}
 }
 
-# HTTPS endpoint
-${LISTEN_ADDR} {
-    ${TLS_CONFIG}
-
-    # Reverse proxy to sync server
-    reverse_proxy localhost:${SYNC_PORT} {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-
-    # Logging
+${TLS_DOMAIN} {
+    reverse_proxy localhost:${SYNC_PORT}
+    
     log {
         output file /var/log/anki/caddy.log
         format console
     }
 }
 EOF
-
-    # If domain is set, enable auto_https
-    if [ -n "$TLS_DOMAIN" ]; then
+    elif [ -n "$TLS_CERT" ] && [ -n "$TLS_KEY" ] && [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ]; then
+        # Manual certificate mode
+        log_info "Using provided TLS certificates"
+        log_info "Generating Caddyfile for manual certificates"
         cat > "$CADDYFILE" << EOF
 {
-    # Global options
     admin off
-    email ${TLS_EMAIL:-}
+    auto_https disable_redirects
 }
 
-# HTTPS endpoint with automatic Let's Encrypt
-${TLS_DOMAIN} {
-    # Reverse proxy to sync server
-    reverse_proxy localhost:${SYNC_PORT} {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
+localhost:${TLS_PORT} {
+    tls ${TLS_CERT} ${TLS_KEY}
+    
+    reverse_proxy localhost:${SYNC_PORT}
+    
+    log {
+        output file /var/log/anki/caddy.log
+        format console
     }
+}
+EOF
+    else
+        # Self-signed mode
+        log_info "Using self-signed certificate (set TLS_DOMAIN for Let's Encrypt)"
+        log_info "Generating Caddyfile for self-signed certificate"
+        cat > "$CADDYFILE" << EOF
+{
+    admin off
+    auto_https disable_redirects
+}
 
-    # Logging
+localhost:${TLS_PORT} {
+    tls internal
+    
+    reverse_proxy localhost:${SYNC_PORT}
+    
     log {
         output file /var/log/anki/caddy.log
         format console
