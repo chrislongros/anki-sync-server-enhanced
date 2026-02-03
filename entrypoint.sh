@@ -33,8 +33,11 @@ export BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 
 # TLS settings
 export TLS_ENABLED="${TLS_ENABLED:-false}"
-export TLS_CERT="${TLS_CERT:-/config/cert.pem}"
-export TLS_KEY="${TLS_KEY:-/config/key.pem}"
+export TLS_PORT="${TLS_PORT:-8443}"
+export TLS_DOMAIN="${TLS_DOMAIN:-}"
+export TLS_EMAIL="${TLS_EMAIL:-}"
+export TLS_CERT="${TLS_CERT:-}"
+export TLS_KEY="${TLS_KEY:-}"
 
 # Notification settings
 export NOTIFY_ENABLED="${NOTIFY_ENABLED:-false}"
@@ -44,6 +47,10 @@ export NOTIFY_TYPE="${NOTIFY_TYPE:-discord}"
 # Metrics settings
 export METRICS_ENABLED="${METRICS_ENABLED:-false}"
 export METRICS_PORT="${METRICS_PORT:-9090}"
+
+# Dashboard settings
+export DASHBOARD_ENABLED="${DASHBOARD_ENABLED:-false}"
+export DASHBOARD_PORT="${DASHBOARD_PORT:-8081}"
 
 # Version info
 ANKI_VERSION=$(cat /anki_version.txt 2>/dev/null || echo "unknown")
@@ -83,13 +90,13 @@ log_error() { log error "$@"; }
 send_notification() {
     local message="$1"
     local title="${2:-Anki Sync Server}"
-    
+
     if [ "$NOTIFY_ENABLED" != "true" ] || [ -z "$NOTIFY_WEBHOOK_URL" ]; then
         return
     fi
-    
+
     log_debug "Sending notification: $message"
-    
+
     case "$NOTIFY_TYPE" in
         discord)
             curl -s -X POST "$NOTIFY_WEBHOOK_URL" \
@@ -97,7 +104,6 @@ send_notification() {
                 -d "{\"content\": \"**${title}**\n${message}\"}" > /dev/null 2>&1 || true
             ;;
         telegram)
-            # NOTIFY_WEBHOOK_URL should be: https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<CHAT_ID>
             curl -s -X POST "$NOTIFY_WEBHOOK_URL" \
                 -d "text=${title}: ${message}" > /dev/null 2>&1 || true
             ;;
@@ -105,6 +111,11 @@ send_notification() {
             curl -s -X POST "$NOTIFY_WEBHOOK_URL" \
                 -H "Content-Type: application/json" \
                 -d "{\"text\": \"*${title}*\n${message}\"}" > /dev/null 2>&1 || true
+            ;;
+        ntfy)
+            curl -s -X POST "$NOTIFY_WEBHOOK_URL" \
+                -H "Title: ${title}" \
+                -d "${message}" > /dev/null 2>&1 || true
             ;;
         generic)
             curl -s -X POST "$NOTIFY_WEBHOOK_URL" \
@@ -120,23 +131,28 @@ send_notification() {
 shutdown_handler() {
     log_info "Received shutdown signal, stopping gracefully..."
     send_notification "Server shutting down" "Anki Sync Server"
-    
+
     # Kill the sync server process
     if [ -n "$SYNC_PID" ]; then
         kill -TERM "$SYNC_PID" 2>/dev/null || true
         wait "$SYNC_PID" 2>/dev/null || true
     fi
-    
+
+    # Kill Caddy if running
+    if [ -n "$CADDY_PID" ]; then
+        kill -TERM "$CADDY_PID" 2>/dev/null || true
+    fi
+
     # Kill metrics server if running
     if [ -n "$METRICS_PID" ]; then
         kill -TERM "$METRICS_PID" 2>/dev/null || true
     fi
-    
+
     # Stop cron if running
     if [ -f /var/run/crond.pid ]; then
         kill $(cat /var/run/crond.pid) 2>/dev/null || true
     fi
-    
+
     log_info "Shutdown complete"
     exit 0
 }
@@ -174,7 +190,7 @@ USER_NAMES=""
 for var in $(env | grep -E '^SYNC_USER[0-9]+=' | sort -t= -k1 -V); do
     value="${var#*=}"
     username="${value%%:*}"
-    
+
     if [ -n "$USERS" ]; then
         USERS="$USERS,$value"
         USER_NAMES="$USER_NAMES, $username"
@@ -193,17 +209,128 @@ fi
 export SYNC_USER="$USERS"
 
 # -----------------------------------------------------------------------------
+# Setup TLS with Caddy
+# -----------------------------------------------------------------------------
+setup_tls() {
+    log_info "Setting up TLS with Caddy..."
+
+    local CADDYFILE="/config/caddy/Caddyfile"
+    mkdir -p /config/caddy
+
+    # Determine TLS configuration
+    if [ -n "$TLS_CERT" ] && [ -n "$TLS_KEY" ] && [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ]; then
+        # Manual certificates provided
+        log_info "Using provided TLS certificates"
+        TLS_CONFIG="tls $TLS_CERT $TLS_KEY"
+        LISTEN_ADDR=":${TLS_PORT}"
+    elif [ -n "$TLS_DOMAIN" ]; then
+        # Auto HTTPS with Let's Encrypt
+        if [ -n "$TLS_EMAIL" ]; then
+            log_info "Using Let's Encrypt for $TLS_DOMAIN (email: $TLS_EMAIL)"
+            TLS_CONFIG="tls $TLS_EMAIL"
+        else
+            log_info "Using Let's Encrypt for $TLS_DOMAIN (no email)"
+            TLS_CONFIG="tls"
+        fi
+        LISTEN_ADDR="$TLS_DOMAIN"
+    else
+        # Self-signed certificate
+        log_info "Using self-signed certificate (set TLS_DOMAIN for Let's Encrypt)"
+        TLS_CONFIG="tls internal"
+        LISTEN_ADDR=":${TLS_PORT}"
+    fi
+
+    # Generate Caddyfile
+    cat > "$CADDYFILE" << EOF
+{
+    # Global options
+    admin off
+    auto_https off
+}
+
+# HTTPS endpoint
+${LISTEN_ADDR} {
+    ${TLS_CONFIG}
+
+    # Reverse proxy to sync server
+    reverse_proxy localhost:${SYNC_PORT} {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Logging
+    log {
+        output file /var/log/anki/caddy.log
+        format console
+    }
+}
+EOF
+
+    # If domain is set, enable auto_https
+    if [ -n "$TLS_DOMAIN" ]; then
+        cat > "$CADDYFILE" << EOF
+{
+    # Global options
+    admin off
+    email ${TLS_EMAIL:-}
+}
+
+# HTTPS endpoint with automatic Let's Encrypt
+${TLS_DOMAIN} {
+    # Reverse proxy to sync server
+    reverse_proxy localhost:${SYNC_PORT} {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Logging
+    log {
+        output file /var/log/anki/caddy.log
+        format console
+    }
+}
+EOF
+    fi
+
+    log_debug "Caddyfile created at $CADDYFILE"
+
+    # Start Caddy
+    log_info "Starting Caddy on port $TLS_PORT..."
+    XDG_DATA_HOME=/config/caddy caddy run --config "$CADDYFILE" --adapter caddyfile &
+    CADDY_PID=$!
+
+    # Wait a moment for Caddy to start
+    sleep 2
+
+    if kill -0 "$CADDY_PID" 2>/dev/null; then
+        log_info "Caddy started successfully (PID: $CADDY_PID)"
+    else
+        log_error "Caddy failed to start"
+        TLS_ENABLED="false"
+    fi
+}
+
+if [ "$TLS_ENABLED" = "true" ]; then
+    setup_tls
+fi
+
+# -----------------------------------------------------------------------------
 # Setup automated backups
 # -----------------------------------------------------------------------------
 if [ "$BACKUP_ENABLED" = "true" ]; then
     log_info "Setting up automated backups (schedule: $BACKUP_SCHEDULE)"
-    
+
     # Create cron job
-    echo "$BACKUP_SCHEDULE /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" > /etc/crontabs/root
-    
+    echo "$BACKUP_SCHEDULE /usr/local/bin/backup.sh >> /var/log/anki/backup.log 2>&1" > /etc/cron.d/anki-backup
+    chmod 0644 /etc/cron.d/anki-backup
+
     # Start cron daemon
-    crond -b -l 8
-    
+    cron
+
     log_info "Backup cron started"
 fi
 
@@ -212,9 +339,9 @@ fi
 # -----------------------------------------------------------------------------
 if [ "$METRICS_ENABLED" = "true" ]; then
     log_info "Starting metrics server on port $METRICS_PORT"
-    
+
     START_TIME=$(date +%s)
-    
+
     # Start simple metrics server in background
     (
         while true; do
@@ -223,7 +350,7 @@ if [ "$METRICS_ENABLED" = "true" ]; then
             DATA_SIZE=$(du -sb "$SYNC_BASE" 2>/dev/null | cut -f1 || echo 0)
             BACKUP_COUNT=$(ls -1 /backups/*.tar.gz 2>/dev/null | wc -l || echo 0)
             UPTIME=$(($(date +%s) - START_TIME))
-            
+
             # Create metrics response
             METRICS="# HELP anki_sync_users_total Total number of configured users
 # TYPE anki_sync_users_total gauge
@@ -243,7 +370,7 @@ anki_sync_uptime_seconds $UPTIME
 
 # HELP anki_sync_info Server information
 # TYPE anki_sync_info gauge
-anki_sync_info{version=\"$ANKI_VERSION\"} 1
+anki_sync_info{version=\"$ANKI_VERSION\",tls=\"$TLS_ENABLED\"} 1
 "
             # Simple HTTP server using netcat
             echo -e "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n$METRICS" | nc -l -p "$METRICS_PORT" -q 1 > /dev/null 2>&1 || true
@@ -277,15 +404,23 @@ echo "╔═══════════════════════�
 echo "║           Anki Sync Server Enhanced                          ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 printf "║  %-60s ║\n" "Version:     $ANKI_VERSION"
-printf "║  %-60s ║\n" "Host:        ${SYNC_HOST}:${SYNC_PORT}"
+printf "║  %-60s ║\n" "Sync:        ${SYNC_HOST}:${SYNC_PORT} (HTTP)"
+if [ "$TLS_ENABLED" = "true" ]; then
+    if [ -n "$TLS_DOMAIN" ]; then
+        printf "║  %-60s ║\n" "TLS:         https://${TLS_DOMAIN} (Let's Encrypt)"
+    else
+        printf "║  %-60s ║\n" "TLS:         port ${TLS_PORT} (self-signed/manual)"
+    fi
+fi
 printf "║  %-60s ║\n" "Users:       ${USER_COUNT} (${USER_NAMES})"
 printf "║  %-60s ║\n" "Data:        ${SYNC_BASE}"
 printf "║  %-60s ║\n" "Log Level:   ${LOG_LEVEL}"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Features:                                                   ║"
+printf "║    - TLS:         %-42s ║\n" "$([ "$TLS_ENABLED" = "true" ] && echo "Enabled (port $TLS_PORT)" || echo "Disabled")"
 printf "║    - Backups:     %-42s ║\n" "$([ "$BACKUP_ENABLED" = "true" ] && echo "Enabled ($BACKUP_SCHEDULE)" || echo "Disabled")"
 printf "║    - Metrics:     %-42s ║\n" "$([ "$METRICS_ENABLED" = "true" ] && echo "Enabled (port $METRICS_PORT)" || echo "Disabled")"
-printf "║    - TLS:         %-42s ║\n" "$([ "$TLS_ENABLED" = "true" ] && echo "Enabled" || echo "Disabled")"
+printf "║    - Dashboard:   %-42s ║\n" "$([ "$DASHBOARD_ENABLED" = "true" ] && echo "Enabled (port $DASHBOARD_PORT)" || echo "Disabled")"
 printf "║    - Alerts:      %-42s ║\n" "$([ "$NOTIFY_ENABLED" = "true" ] && echo "Enabled ($NOTIFY_TYPE)" || echo "Disabled")"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
@@ -293,17 +428,12 @@ echo ""
 # -----------------------------------------------------------------------------
 # Send startup notification
 # -----------------------------------------------------------------------------
-send_notification "Server started with $USER_COUNT users" "Anki Sync Server"
+send_notification "Server started with $USER_COUNT users (TLS: $TLS_ENABLED)" "Anki Sync Server"
 
 # -----------------------------------------------------------------------------
 # Start the sync server
 # -----------------------------------------------------------------------------
 log_info "Starting Anki sync server..."
-
-if [ "$TLS_ENABLED" = "true" ] && [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ]; then
-    log_info "TLS enabled, using certificates from $TLS_CERT"
-    log_warn "Native TLS not yet supported, use reverse proxy (nginx/traefik) for HTTPS"
-fi
 
 # Run sync server in background and capture PID
 anki-sync-server &

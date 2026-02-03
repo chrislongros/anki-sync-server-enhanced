@@ -1,0 +1,57 @@
+# =============================================================================
+# Anki Sync Server Enhanced with TLS
+# =============================================================================
+# Three TLS modes:
+#   1. Let's Encrypt (automatic) - set TLS_DOMAIN and TLS_EMAIL
+#   2. Manual certificates - set TLS_CERT and TLS_KEY paths
+#   3. Self-signed (default) - just set TLS_ENABLED=true
+# =============================================================================
+
+services:
+  anki-sync-server:
+    image: chrislongros/anki-sync-server-enhanced:latest
+    container_name: anki-sync-tls
+    ports:
+      - "8080:8080"   # HTTP (internal/fallback)
+      - "8443:8443"   # HTTPS
+      - "9090:9090"   # Metrics (optional)
+      - "8081:8081"   # Dashboard (optional)
+    environment:
+      # Users
+      - SYNC_USER1=alice:password1
+      - SYNC_USER2=bob:password2
+
+      # TLS Configuration - Choose ONE of the following modes:
+
+      # --- Mode 1: Let's Encrypt (recommended for public servers) ---
+      # - TLS_ENABLED=true
+      # - TLS_DOMAIN=anki.yourdomain.com
+      # - TLS_EMAIL=your@email.com
+
+      # --- Mode 2: Manual certificates ---
+      # - TLS_ENABLED=true
+      # - TLS_CERT=/config/certs/fullchain.pem
+      # - TLS_KEY=/config/certs/privkey.pem
+
+      # --- Mode 3: Self-signed (for local/testing) ---
+      - TLS_ENABLED=true
+      - TLS_PORT=8443
+
+      # Other settings
+      - TZ=Europe/Berlin
+      - BACKUP_ENABLED=true
+      - METRICS_ENABLED=true
+      - DASHBOARD_ENABLED=true
+
+    volumes:
+      - anki_data:/data
+      - anki_backups:/backups
+      - anki_config:/config
+      # For manual certs, mount your certificates:
+      # - ./certs:/config/certs:ro
+    restart: unless-stopped
+
+volumes:
+  anki_data:
+  anki_backups:
+  anki_config:
