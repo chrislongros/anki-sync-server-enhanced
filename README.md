@@ -35,6 +35,7 @@ The official Anki project provides sync server source code but no pre-built Dock
 | Hashed passwords | ✅ |
 | Fail2ban integration | ✅ |
 | Rate limiting | ✅ |
+| Built-in TLS (Let's Encrypt/self-signed) | ✅ |
 | User management CLI | ✅ |
 | PUID/PGID support | ✅ |
 
@@ -59,7 +60,8 @@ services:
     image: chrislongros/anki-sync-server-enhanced:latest
     container_name: anki-sync
     ports:
-      - "8080:8080"   # Sync server
+      - "8080:8080"   # Sync server (HTTP)
+      - "8443:8443"   # Sync server (HTTPS, if TLS_ENABLED)
       - "8081:8081"   # Dashboard (optional)
       - "9090:9090"   # Metrics (optional)
     environment:
@@ -164,6 +166,59 @@ Screenshot placeholder - add actual screenshot
 | `RATE_LIMIT_REQUESTS` | Max requests | `100` |
 | `RATE_LIMIT_WINDOW` | Window seconds | `60` |
 
+
+### TLS / HTTPS
+
+Built-in TLS support via Caddy reverse proxy. Three modes available:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TLS_ENABLED` | Enable TLS | `false` |
+| `TLS_PORT` | HTTPS port | `8443` |
+| `TLS_DOMAIN` | Domain for Let's Encrypt | - |
+| `TLS_EMAIL` | Email for Let's Encrypt | - |
+| `TLS_CERT` | Path to manual certificate | - |
+| `TLS_KEY` | Path to manual private key | - |
+
+**Mode 1: Let's Encrypt (automatic)**
+```bash
+docker run -d \
+  -p 80:80 -p 443:443 \
+  -e SYNC_USER1=user:password \
+  -e TLS_ENABLED=true \
+  -e TLS_DOMAIN=anki.yourdomain.com \
+  -e TLS_EMAIL=you@email.com \
+  -v anki_data:/data \
+  -v anki_config:/config \
+  chrislongros/anki-sync-server-enhanced
+```
+
+**Mode 2: Manual certificates**
+```bash
+docker run -d \
+  -p 8443:8443 \
+  -e SYNC_USER1=user:password \
+  -e TLS_ENABLED=true \
+  -e TLS_CERT=/config/certs/fullchain.pem \
+  -e TLS_KEY=/config/certs/privkey.pem \
+  -v ./certs:/config/certs:ro \
+  -v anki_data:/data \
+  chrislongros/anki-sync-server-enhanced
+```
+
+**Mode 3: Self-signed (local/testing)**
+```bash
+docker run -d \
+  -p 8080:8080 -p 8443:8443 \
+  -e SYNC_USER1=user:password \
+  -e TLS_ENABLED=true \
+  -v anki_data:/data \
+  chrislongros/anki-sync-server-enhanced
+```
+
+Then configure clients to use `https://your-server:8443/`
+
+> **Note:** Self-signed certificates will show browser warnings. For local networks, you may prefer using HTTP or a proper certificate.
 ## CLI Tools
 
 ```bash
@@ -207,7 +262,7 @@ docker exec anki-sync restore.sh --s3 backup_file.tar.gz
 3. Enter: `http://your-server:8080/`
 4. Sync with your credentials
 
-> **Tip:** Use HTTPS with a reverse proxy (Traefik, Caddy, nginx) for secure remote access. See [docker-compose.traefik.yml](docker-compose.traefik.yml) for an example.
+> **Tip:** Enable built-in TLS with `TLS_ENABLED=true` or use a reverse proxy (Traefik, Caddy, nginx) for secure remote access.
 
 ## Prometheus Metrics
 
