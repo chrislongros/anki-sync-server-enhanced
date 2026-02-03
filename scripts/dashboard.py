@@ -390,7 +390,7 @@ def api_system():
 @requires_auth
 def api_features():
     return jsonify({k: os.environ.get(v, 'false').lower() == 'true' for k, v in
-                    [('Backups', 'BACKUP_ENABLED'), ('S3 Upload', 'S3_BACKUP_ENABLED'), ('Metrics', 'METRICS_ENABLED'),
+                    [('TLS', 'TLS_ENABLED'), ('Backups', 'BACKUP_ENABLED'), ('S3 Upload', 'S3_BACKUP_ENABLED'), ('Metrics', 'METRICS_ENABLED'),
                      ('Fail2Ban', 'FAIL2BAN_ENABLED'), ('Notifications', 'NOTIFY_ENABLED'), ('Rate Limit', 'RATE_LIMIT_ENABLED')]})
 
 @app.route('/api/syncs')

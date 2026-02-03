@@ -320,6 +320,28 @@ if [ "$BACKUP_ENABLED" = "true" ]; then
     log_info "Backup cron started"
 fi
 
+
+# -----------------------------------------------------------------------------
+# Setup dashboard
+# -----------------------------------------------------------------------------
+if [ "$DASHBOARD_ENABLED" = "true" ]; then
+    log_info "Starting dashboard on port $DASHBOARD_PORT"
+    
+    export SYNC_BASE="$SYNC_BASE"
+    export BACKUP_DIR="/backups"
+    export LOG_DIR="/var/log/anki"
+    export TLS_ENABLED="$TLS_ENABLED"
+    
+    python3 /usr/local/bin/dashboard.py &
+    DASHBOARD_PID=$!
+    
+    sleep 1
+    if kill -0 "$DASHBOARD_PID" 2>/dev/null; then
+        log_info "Dashboard started (PID: $DASHBOARD_PID)"
+    else
+        log_error "Dashboard failed to start"
+    fi
+fi
 # -----------------------------------------------------------------------------
 # Setup metrics endpoint
 # -----------------------------------------------------------------------------
@@ -417,6 +439,10 @@ echo ""
 send_notification "Server started with $USER_COUNT users (TLS: $TLS_ENABLED)" "Anki Sync Server"
 
 # -----------------------------------------------------------------------------
+# Copy version info to state directory for dashboard
+cp /anki_version.txt /var/lib/anki/version.txt 2>/dev/null || true
+echo $(date +%s) > /var/lib/anki/start_time.txt
+
 # Start the sync server
 # -----------------------------------------------------------------------------
 log_info "Starting Anki sync server..."
