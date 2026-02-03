@@ -345,4 +345,4 @@ Built from the official [Anki](https://github.com/ankitects/anki) sync server by
 
 ## License
 
-AGPL-3.0 - © 2025 Chris Longros - see [LICENSE](LICENSE)
+AGPL-3.0 - © 2026 Christos Longros - see [LICENSE](LICENSE)
