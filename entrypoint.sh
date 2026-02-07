@@ -441,7 +441,7 @@ send_notification "Server started with $USER_COUNT users (TLS: $TLS_ENABLED)" "A
 # -----------------------------------------------------------------------------
 # Copy version info to state directory for dashboard
 cp /anki_version.txt /var/lib/anki/version.txt 2>/dev/null || true
-echo $(date +%s) > /var/lib/anki/start_time.txt
+echo $(date +%s) > /var/lib/anki/start_time.txt 2>/dev/null || true
 
 # Start the sync server
 # -----------------------------------------------------------------------------
