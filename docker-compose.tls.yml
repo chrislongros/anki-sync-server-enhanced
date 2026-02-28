@@ -9,7 +9,7 @@
 
 services:
   anki-sync-server:
-    image: chrislongros/anki-sync-server-enhanced:latest
+    image: chrislongros/anki-sync-server-enhanced:25.09.2-1
     container_name: anki-sync-tls
     ports:
       - "8080:8080"   # HTTP (internal/fallback)

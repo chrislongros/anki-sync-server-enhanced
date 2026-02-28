@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>anki-sync-server</Name>
-  <Repository>chrislongros/anki-sync-server-enhanced:latest</Repository>
+  <Repository>chrislongros/anki-sync-server-enhanced:25.09.2-1</Repository>
   <Registry>https://hub.docker.com/r/chrislongros/anki-sync-server-enhanced</Registry>
   <Network>bridge</Network>
   <Shell>bash</Shell>

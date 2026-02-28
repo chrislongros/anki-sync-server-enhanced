@@ -58,7 +58,7 @@ I built a Docker image for running your own Anki sync server. It wraps the offic
       -p 8080:8080 \
       -e SYNC_USER1=user:password \
       -v anki_data:/data \
-      chrislongros/anki-sync-server-enhanced
+      chrislongros/anki-sync-server-enhanced:25.09.2-1
 
 Then in Anki: Tools > Preferences > Syncing > set server to http://your-ip:8080/
 
@@ -93,7 +93,7 @@ For those who self-host their Anki sync server, I made a Docker image that adds 
     docker run -d -p 8080:8080 \
       -e SYNC_USER1=myuser:mypassword \
       -v anki_data:/data \
-      chrislongros/anki-sync-server-enhanced
+      chrislongros/anki-sync-server-enhanced:25.09.2-1
 
 GitHub: https://github.com/chrislongros/anki-sync-server-enhanced
 
@@ -123,7 +123,7 @@ I've created a Docker image that wraps the official Anki sync server with additi
 It builds directly from the official ankitects/anki repository, just adds Docker infrastructure and ops features.
 
 GitHub: https://github.com/chrislongros/anki-sync-server-enhanced
-Docker Hub: docker pull chrislongros/anki-sync-server-enhanced
+Docker Hub: docker pull chrislongros/anki-sync-server-enhanced:25.09.2-1
 
 Templates for TrueNAS SCALE and Unraid are included.
 

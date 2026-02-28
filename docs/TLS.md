@@ -75,7 +75,7 @@ docker run -d \
   -e TLS_EMAIL=admin@example.com \
   -v anki_data:/data \
   -v anki_config:/config \
-  chrislongros/anki-sync-server-enhanced
+  chrislongros/anki-sync-server-enhanced:25.09.2-1
 ```
 
 ### Self-Signed (Local)
@@ -88,7 +88,7 @@ docker run -d \
   -e SYNC_USER1=user:password \
   -e TLS_ENABLED=true \
   -v anki_data:/data \
-  chrislongros/anki-sync-server-enhanced
+  chrislongros/anki-sync-server-enhanced:25.09.2-1
 ```
 
 Then configure Anki client to: `https://your-server:8443/`

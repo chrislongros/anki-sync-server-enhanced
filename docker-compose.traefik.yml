@@ -31,7 +31,7 @@ services:
     restart: unless-stopped
 
   anki-sync-server:
-    image: chrislongros/anki-sync-server-enhanced:latest
+    image: chrislongros/anki-sync-server-enhanced:25.09.2-1
     container_name: anki-sync-server
     environment:
       - SYNC_USER1=user1:changeme123

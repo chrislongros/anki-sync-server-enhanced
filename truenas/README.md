@@ -13,7 +13,7 @@ TrueNAS SCALE 24.10+ uses Docker Compose. Install via Custom App with YAML.
 ```yaml
 services:
   anki-sync-server:
-    image: chrislongros/anki-sync-server-enhanced:latest
+    image: chrislongros/anki-sync-server-enhanced:25.09.2-1
     container_name: anki-sync-server
     restart: unless-stopped
     ports:
@@ -38,7 +38,7 @@ volumes:
 ```yaml
 services:
   anki-sync-server:
-    image: chrislongros/anki-sync-server-enhanced:latest
+    image: chrislongros/anki-sync-server-enhanced:25.09.2-1
     container_name: anki-sync-server
     restart: unless-stopped
     ports:
