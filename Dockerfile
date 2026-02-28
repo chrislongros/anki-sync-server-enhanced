@@ -43,7 +43,7 @@ RUN pip3 install --break-system-packages --no-cache-dir flask boto3 argon2-cffi
 # Create user and directories
 RUN useradd -m -s /bin/bash -u 1000 anki \
     && mkdir -p /var/log/anki /var/lib/anki /data /backups /config /config/caddy \
-    && touch /var/log/anki/sync.log /var/log/anki/auth.log /var/log/anki/backup.log \
+    && touch /var/log/anki/sync.log /var/log/anki/auth.log /var/log/anki/backup.log /var/log/anki/server.log \
     && chown -R anki:anki /var/log/anki /var/lib/anki /data /backups /config /home/anki
 
 # Copy binary and version info

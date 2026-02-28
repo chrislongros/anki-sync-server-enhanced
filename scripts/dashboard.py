@@ -92,7 +92,17 @@ def get_users():
     users_file = os.path.join(STATE_DIR, 'users.txt')
     if os.path.exists(users_file):
         with open(users_file, 'r') as f:
-            return [line.strip() for line in f if line.strip()]
+            content = f.read().strip()
+        if not content:
+            return []
+        users = []
+        for line in content.split('\n'):
+            # Handle both one-per-line and comma-separated formats
+            for user in line.split(','):
+                user = user.strip()
+                if user:
+                    users.append(user)
+        return users
     return []
 
 def get_collection_info(db_path):
@@ -369,7 +379,7 @@ def api_test_notify():
 @app.route('/api/logs/<log_type>')
 @requires_auth
 def api_logs(log_type):
-    files = {'sync': 'sync.log', 'auth': 'auth.log', 'backup': 'backup.log'}
+    files = {'sync': 'sync.log', 'auth': 'auth.log', 'backup': 'backup.log', 'server': 'server.log'}
     if log_type not in files:
         return jsonify({'error': 'Invalid'}), 400
     return jsonify({'lines': read_log_lines(os.path.join(LOG_DIR, files[log_type]), int(request.args.get('lines', 100)))})
@@ -475,7 +485,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         <div id="tab-logs" class="tab-content hidden">
             <div class="card bg-slate-800 rounded-xl p-5">
                 <div class="flex justify-between mb-4">
-                    <div class="flex gap-2"><button onclick="loadLogs('sync')" class="logbtn px-4 py-1.5 bg-blue-600 rounded-lg text-sm text-white">Sync</button><button onclick="loadLogs('auth')" class="logbtn px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 text-slate-300">Auth</button><button onclick="loadLogs('backup')" class="logbtn px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 text-slate-300">Backup</button></div>
+                    <div class="flex gap-2"><button onclick="loadLogs('sync')" class="logbtn px-4 py-1.5 bg-blue-600 rounded-lg text-sm text-white">Sync</button><button onclick="loadLogs('auth')" class="logbtn px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 text-slate-300">Auth</button><button onclick="loadLogs('backup')" class="logbtn px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 text-slate-300">Backup</button><button onclick="loadLogs('server')" class="logbtn px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 text-slate-300">Server</button></div>
                     <button onclick="refreshLogs()" class="px-4 py-1.5 bg-blue-600 rounded-lg text-sm hover:bg-blue-700 text-white">Refresh</button>
                 </div>
                 <div id="logview" class="bg-slate-900 rounded-lg p-4 font-mono text-xs max-h-96 overflow-auto"></div>

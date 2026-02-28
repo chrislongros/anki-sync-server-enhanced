@@ -264,8 +264,12 @@ setup_users() {
         export PASSWORDS_HASHED="1"
     fi
 
-    # Save user list for dashboard
-    echo "$USER_NAMES" > /var/lib/anki/users.txt
+    # Save user list for dashboard (one username per line)
+    : > /var/lib/anki/users.txt
+    for var in $(env | grep -E '^SYNC_USER[0-9]+=' | sort -t= -k1 -V); do
+        value="${var#*=}"
+        echo "${value%%:*}" >> /var/lib/anki/users.txt
+    done
     echo "$USER_COUNT" > /var/lib/anki/user_count.txt
 }
 

@@ -148,6 +148,11 @@ shutdown_handler() {
         kill -TERM "$METRICS_PID" 2>/dev/null || true
     fi
 
+    # Kill sync output monitor if running
+    if [ -n "$MONITOR_PID" ]; then
+        kill -TERM "$MONITOR_PID" 2>/dev/null || true
+    fi
+
     # Stop cron if running
     if [ -f /var/run/crond.pid ]; then
         kill $(cat /var/run/crond.pid) 2>/dev/null || true
@@ -207,6 +212,19 @@ if [ -z "$USERS" ]; then
 fi
 
 export SYNC_USER="$USERS"
+
+# Save user list for dashboard (one username per line)
+: > /var/lib/anki/users.txt
+for var in $(env | grep -E '^SYNC_USER[0-9]+=' | sort -t= -k1 -V); do
+    value="${var#*=}"
+    username="${value%%:*}"
+    echo "$username" >> /var/lib/anki/users.txt
+done
+echo "$USER_COUNT" > /var/lib/anki/user_count.txt
+
+# Initialize metrics tracking files
+echo "0" > /var/lib/anki/sync_count.txt
+echo "0" > /var/lib/anki/bytes_synced.txt
 
 # -----------------------------------------------------------------------------
 # Setup TLS with Caddy
@@ -443,19 +461,53 @@ send_notification "Server started with $USER_COUNT users (TLS: $TLS_ENABLED)" "A
 cp /anki_version.txt /var/lib/anki/version.txt 2>/dev/null || true
 echo $(date +%s) > /var/lib/anki/start_time.txt 2>/dev/null || true
 
+# -----------------------------------------------------------------------------
+# Monitor sync server output for sync/auth events
+# -----------------------------------------------------------------------------
+monitor_sync_output() {
+    local logfile="$1"
+    tail -F "$logfile" 2>/dev/null | while IFS= read -r line; do
+        # Detect sync operations (upload/download endpoints indicate a sync)
+        if echo "$line" | grep -qiE '(sync|upload|download|collection)' 2>/dev/null; then
+            if echo "$line" | grep -qiE '(200|ok|complete|success)' 2>/dev/null; then
+                # Extract user info if available
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] SYNC COMPLETE $line" >> /var/log/anki/sync.log
+                # Increment sync count
+                count=$(cat /var/lib/anki/sync_count.txt 2>/dev/null || echo 0)
+                echo $((count + 1)) > /var/lib/anki/sync_count.txt
+            fi
+        fi
+        # Detect auth events (hostKey endpoint is auth)
+        if echo "$line" | grep -qiE '(host_?key|auth|login)' 2>/dev/null; then
+            if echo "$line" | grep -qiE '(200|ok|success)' 2>/dev/null; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] AUTH_SUCCESS $line" >> /var/log/anki/auth.log
+            elif echo "$line" | grep -qiE '(401|403|fail|denied|error|reject)' 2>/dev/null; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] AUTH_FAILED $line" >> /var/log/anki/auth.log
+            fi
+        fi
+    done
+}
+
 # Start the sync server
 # -----------------------------------------------------------------------------
 log_info "Starting Anki sync server..."
 
-# Run sync server in background and capture PID
-anki-sync-server &
+# Run sync server with output captured to server.log
+anki-sync-server >> /var/log/anki/server.log 2>&1 &
 SYNC_PID=$!
+
+# Start monitoring sync server output for sync/auth events
+monitor_sync_output /var/log/anki/server.log &
+MONITOR_PID=$!
 
 log_info "Sync server started with PID $SYNC_PID"
 
 # Wait for the sync server process
 wait "$SYNC_PID"
 EXIT_CODE=$?
+
+# Stop the monitor
+kill "$MONITOR_PID" 2>/dev/null || true
 
 log_info "Sync server exited with code $EXIT_CODE"
 send_notification "Server stopped (exit code: $EXIT_CODE)" "Anki Sync Server"
