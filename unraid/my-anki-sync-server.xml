@@ -52,7 +52,7 @@
 
   <Config Name="Enable Metrics" Target="METRICS_ENABLED" Default="false" Mode="" Description="Enable Prometheus metrics endpoint" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
 
-  <Config Name="Metrics Port" Target="9090" Default="9090" Mode="tcp" Description="Prometheus metrics port" Type="Port" Display="advanced" Required="false" Mask="false">9090</Config
+  <Config Name="Metrics Port" Target="9090" Default="9090" Mode="tcp" Description="Prometheus metrics port" Type="Port" Display="advanced" Required="false" Mask="false">9090</Config>
 
   <Config Name="Enable Notifications" Target="NOTIFY_ENABLED" Default="false" Mode="" Description="Enable Discord/Telegram/Slack notifications" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
 
