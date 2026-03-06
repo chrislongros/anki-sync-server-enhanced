@@ -21,7 +21,7 @@
     - Non-root execution
   </Overview>
   <Category>Productivity: Tools:</Category>
-  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <WebUI>http://[IP]:[PORT:8081]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/chrislongros/anki-sync-server-enhanced/main/unraid/anki-sync-server.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/ankitects/anki/main/qt/aqt/data/web/imgs/anki-logo-thin.png</Icon>
   <ExtraParams/>
@@ -30,7 +30,7 @@
   <DonateLink/>
   <Requires/>
 
-  <Config Name="Web UI Port" Target="8080" Default="8080" Mode="tcp" Description="Sync server port" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Sync Port" Target="8080" Default="8080" Mode="tcp" Description="Sync server port" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
 
   <Config Name="User 1" Target="SYNC_USER1" Default="user:password" Mode="" Description="First user credentials (username:password)" Type="Variable" Display="always" Required="true" Mask="false">user:password</Config>
 
@@ -39,6 +39,10 @@
   <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
 
   <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+
+  <Config Name="Enable Dashboard" Target="DASHBOARD_ENABLED" Default="true" Mode="" Description="" Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+
+  <Config Name="Dashboard Port" Target="8081" Default="8081" Mode="tcp" Description="" Type="Port" Display="always" Required="false" Mask="false">8081</Config>
 
   <Config Name="Enable Backups" Target="BACKUP_ENABLED" Default="true" Mode="" Description="Enable automated backups" Type="Variable" Display="always" Required="false" Mask="false">true</Config>
 
