@@ -2,7 +2,7 @@
 
 image:
   repository: chrislongros/anki-sync-server-enhanced
-  tag: 25.09.2-1
+  tag: 25.09.4-1
   pullPolicy: IfNotPresent
 
 # User configuration (required)
