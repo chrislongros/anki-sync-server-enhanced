@@ -304,7 +304,7 @@ secrets:
 ## NAS Installation
 
 - **TrueNAS SCALE:** See [truenas/README.md](truenas/README.md)
-- **Unraid:** Use [unraid/anki-sync-server.xml](unraid/anki-sync-server.xml)
+- **Unraid:** Add [unraid/my-anki-sync-server.xml](unraid/my-anki-sync-server.xml) to the templates-user folder
 
 ## Troubleshooting
 
