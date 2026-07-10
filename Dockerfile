@@ -27,6 +27,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates wget curl bash tzdata sqlite3 openssl \
     jq netcat-openbsd python3 python3-pip procps cron msmtp \
+    fail2ban iptables \
     debian-keyring debian-archive-keyring apt-transport-https \
     && rm -rf /var/lib/apt/lists/*
 
@@ -55,6 +56,8 @@ COPY scripts/ /usr/local/bin/
 COPY entrypoint.sh /usr/local/bin/
 COPY healthcheck.sh /usr/local/bin/
 COPY backup.sh /usr/local/bin/
+COPY fail2ban/ /etc/fail2ban/
+RUN rm -f /etc/fail2ban/jail.d/defaults-debian.conf
 RUN chmod +x /usr/local/bin/*.sh /usr/local/bin/*.py 2>/dev/null || true
 
 # Expose ports: HTTP, HTTPS, Metrics, Dashboard

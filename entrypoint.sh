@@ -14,7 +14,7 @@ PGID=${PGID:-1000}
 if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
     groupmod -o -g "$PGID" anki 2>/dev/null || true
     usermod -o -u "$PUID" anki 2>/dev/null || true
-    chown -R anki:anki /data /backups /config 2>/dev/null || true
+    chown -R anki:anki /data /backups /config /var/log/anki /var/lib/anki 2>/dev/null || true
 fi
 
 # -----------------------------------------------------------------------------
@@ -26,10 +26,21 @@ export SYNC_PORT="${SYNC_PORT:-8080}"
 export LOG_LEVEL="${LOG_LEVEL:-info}"
 export TZ="${TZ:-UTC}"
 
+# Password hashing (compatible with official Anki)
+export PASSWORDS_HASHED="${PASSWORDS_HASHED:-0}"
+
 # Backup settings
 export BACKUP_ENABLED="${BACKUP_ENABLED:-false}"
 export BACKUP_SCHEDULE="${BACKUP_SCHEDULE:-0 3 * * *}"
 export BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
+
+# S3 backup settings
+export S3_BACKUP_ENABLED="${S3_BACKUP_ENABLED:-false}"
+export S3_ENDPOINT="${S3_ENDPOINT:-}"
+export S3_BUCKET="${S3_BUCKET:-}"
+export S3_ACCESS_KEY="${S3_ACCESS_KEY:-}"
+export S3_SECRET_KEY="${S3_SECRET_KEY:-}"
+export S3_REGION="${S3_REGION:-us-east-1}"
 
 # TLS settings
 export TLS_ENABLED="${TLS_ENABLED:-false}"
@@ -44,6 +55,22 @@ export NOTIFY_ENABLED="${NOTIFY_ENABLED:-false}"
 export NOTIFY_WEBHOOK_URL="${NOTIFY_WEBHOOK_URL:-}"
 export NOTIFY_TYPE="${NOTIFY_TYPE:-discord}"
 
+# Email notification settings
+export EMAIL_ENABLED="${EMAIL_ENABLED:-false}"
+export EMAIL_HOST="${EMAIL_HOST:-}"
+export EMAIL_PORT="${EMAIL_PORT:-587}"
+export EMAIL_USER="${EMAIL_USER:-}"
+export EMAIL_PASS="${EMAIL_PASS:-}"
+export EMAIL_FROM="${EMAIL_FROM:-}"
+export EMAIL_TO="${EMAIL_TO:-}"
+export EMAIL_TLS="${EMAIL_TLS:-on}"
+
+# Fail2ban settings
+export FAIL2BAN_ENABLED="${FAIL2BAN_ENABLED:-false}"
+export FAIL2BAN_MAX_RETRIES="${FAIL2BAN_MAX_RETRIES:-5}"
+export FAIL2BAN_BAN_TIME="${FAIL2BAN_BAN_TIME:-3600}"
+export FAIL2BAN_FIND_TIME="${FAIL2BAN_FIND_TIME:-600}"
+
 # Metrics settings
 export METRICS_ENABLED="${METRICS_ENABLED:-false}"
 export METRICS_PORT="${METRICS_PORT:-9090}"
@@ -51,6 +78,7 @@ export METRICS_PORT="${METRICS_PORT:-9090}"
 # Dashboard settings
 export DASHBOARD_ENABLED="${DASHBOARD_ENABLED:-false}"
 export DASHBOARD_PORT="${DASHBOARD_PORT:-8081}"
+export DASHBOARD_AUTH="${DASHBOARD_AUTH:-}"
 
 # Version info
 ANKI_VERSION=$(cat /anki_version.txt 2>/dev/null || echo "unknown")
@@ -91,6 +119,8 @@ send_notification() {
     local message="$1"
     local title="${2:-Anki Sync Server}"
 
+    send_email "$message" "$title"
+
     if [ "$NOTIFY_ENABLED" != "true" ] || [ -z "$NOTIFY_WEBHOOK_URL" ]; then
         return
     fi
@@ -123,6 +153,18 @@ send_notification() {
                 -d "{\"title\": \"${title}\", \"message\": \"${message}\"}" > /dev/null 2>&1 || true
             ;;
     esac
+}
+
+send_email() {
+    local message="$1"
+    local title="${2:-Anki Sync Server}"
+
+    if [ "$EMAIL_ENABLED" != "true" ] || [ -z "$EMAIL_TO" ]; then
+        return
+    fi
+
+    log_debug "Sending email notification"
+    echo -e "Subject: ${title}\nFrom: ${EMAIL_FROM}\nTo: ${EMAIL_TO}\n\n${message}" | msmtp "$EMAIL_TO" 2>/dev/null || true
 }
 
 # -----------------------------------------------------------------------------
@@ -158,6 +200,8 @@ shutdown_handler() {
         kill $(cat /var/run/crond.pid) 2>/dev/null || true
     fi
 
+    pkill fail2ban 2>/dev/null || true
+
     log_info "Shutdown complete"
     exit 0
 }
@@ -179,11 +223,22 @@ for var in $(env | grep -E '^SYNC_USER[0-9]+_FILE=' | sort); do
     fi
 done
 
-# Load webhook from file if specified
-if [ -n "$NOTIFY_WEBHOOK_URL_FILE" ] && [ -f "$NOTIFY_WEBHOOK_URL_FILE" ]; then
-    export NOTIFY_WEBHOOK_URL="$(cat "$NOTIFY_WEBHOOK_URL_FILE")"
-    log_debug "Loaded webhook URL from file"
-fi
+load_secret() {
+    local var_name="$1"
+    local file_var="${var_name}_FILE"
+    local file_path="${!file_var}"
+
+    if [ -n "$file_path" ] && [ -f "$file_path" ]; then
+        export "$var_name"="$(cat "$file_path")"
+        log_debug "Loaded secret for $var_name"
+    fi
+}
+
+load_secret "NOTIFY_WEBHOOK_URL"
+load_secret "EMAIL_PASS"
+load_secret "S3_ACCESS_KEY"
+load_secret "S3_SECRET_KEY"
+load_secret "DASHBOARD_AUTH"
 
 # -----------------------------------------------------------------------------
 # Build user list
@@ -212,6 +267,10 @@ if [ -z "$USERS" ]; then
 fi
 
 export SYNC_USER="$USERS"
+
+if [ "$PASSWORDS_HASHED" = "true" ]; then
+    export PASSWORDS_HASHED="1"
+fi
 
 # Save user list for dashboard (one username per line)
 : > /var/lib/anki/users.txt
@@ -320,6 +379,56 @@ EOF
 
 if [ "$TLS_ENABLED" = "true" ]; then
     setup_tls
+fi
+
+# -----------------------------------------------------------------------------
+# Setup email notifications
+# -----------------------------------------------------------------------------
+if [ "$EMAIL_ENABLED" = "true" ] && [ -n "$EMAIL_HOST" ]; then
+    log_info "Configuring email via $EMAIL_HOST"
+    cat > /etc/msmtprc << EOF
+defaults
+auth           on
+tls            ${EMAIL_TLS}
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        /var/log/anki/email.log
+
+account        default
+host           ${EMAIL_HOST}
+port           ${EMAIL_PORT}
+from           ${EMAIL_FROM}
+user           ${EMAIL_USER}
+password       ${EMAIL_PASS}
+EOF
+    chmod 600 /etc/msmtprc
+fi
+
+# -----------------------------------------------------------------------------
+# Setup fail2ban
+# -----------------------------------------------------------------------------
+if [ "$FAIL2BAN_ENABLED" = "true" ]; then
+    if command -v fail2ban-server > /dev/null 2>&1; then
+        log_info "Setting up fail2ban (max retries: $FAIL2BAN_MAX_RETRIES, ban time: ${FAIL2BAN_BAN_TIME}s)"
+
+        cat > /etc/fail2ban/jail.d/anki.local << EOF
+[anki-auth]
+enabled = true
+filter = anki-auth
+logpath = /var/log/anki/auth.log
+maxretry = ${FAIL2BAN_MAX_RETRIES}
+bantime = ${FAIL2BAN_BAN_TIME}
+findtime = ${FAIL2BAN_FIND_TIME}
+action = iptables-allports[name=anki, protocol=all]
+EOF
+
+        if fail2ban-server -b -x > /dev/null 2>&1; then
+            log_info "Fail2ban started"
+        else
+            log_error "Fail2ban failed to start (container may need NET_ADMIN capability)"
+        fi
+    else
+        log_warn "FAIL2BAN_ENABLED=true but fail2ban is not installed in this image"
+    fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -445,9 +554,13 @@ echo "╠═══════════════════════�
 echo "║  Features:                                                   ║"
 printf "║    - TLS:         %-42s ║\n" "$([ "$TLS_ENABLED" = "true" ] && echo "Enabled (port $TLS_PORT)" || echo "Disabled")"
 printf "║    - Backups:     %-42s ║\n" "$([ "$BACKUP_ENABLED" = "true" ] && echo "Enabled ($BACKUP_SCHEDULE)" || echo "Disabled")"
+printf "║    - S3 Upload:   %-42s ║\n" "$([ "$S3_BACKUP_ENABLED" = "true" ] && echo "Enabled ($S3_BUCKET)" || echo "Disabled")"
 printf "║    - Metrics:     %-42s ║\n" "$([ "$METRICS_ENABLED" = "true" ] && echo "Enabled (port $METRICS_PORT)" || echo "Disabled")"
 printf "║    - Dashboard:   %-42s ║\n" "$([ "$DASHBOARD_ENABLED" = "true" ] && echo "Enabled (port $DASHBOARD_PORT)" || echo "Disabled")"
 printf "║    - Alerts:      %-42s ║\n" "$([ "$NOTIFY_ENABLED" = "true" ] && echo "Enabled ($NOTIFY_TYPE)" || echo "Disabled")"
+printf "║    - Email:       %-42s ║\n" "$([ "$EMAIL_ENABLED" = "true" ] && echo "Enabled ($EMAIL_TO)" || echo "Disabled")"
+printf "║    - Fail2Ban:    %-42s ║\n" "$([ "$FAIL2BAN_ENABLED" = "true" ] && echo "Enabled ($FAIL2BAN_MAX_RETRIES retries)" || echo "Disabled")"
+printf "║    - Hashed Pass: %-42s ║\n" "$([ "$PASSWORDS_HASHED" = "1" ] && echo "Yes" || echo "No")"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -466,7 +579,7 @@ echo $(date +%s) > /var/lib/anki/start_time.txt 2>/dev/null || true
 # -----------------------------------------------------------------------------
 monitor_sync_output() {
     local logfile="$1"
-    tail -F "$logfile" 2>/dev/null | while IFS= read -r line; do
+    tail -F "$logfile" 2>/dev/null | sed -u 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         # Detect sync operations (upload/download endpoints indicate a sync)
         if echo "$line" | grep -qiE '(sync|upload|download|collection)' 2>/dev/null; then
             if echo "$line" | grep -qiE '(200|ok|complete|success)' 2>/dev/null; then
