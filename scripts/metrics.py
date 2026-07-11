@@ -62,6 +62,13 @@ def collection_stats(db_path):
                 stats[key] = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
             except sqlite3.Error:
                 stats[key] = 0
+        if not stats['decks']:
+            # schema-11 collections keep decks as JSON in the col table
+            try:
+                import json
+                stats['decks'] = len(json.loads(conn.execute('SELECT decks FROM col').fetchone()[0]))
+            except Exception:
+                pass
         return stats
 
     try:
