@@ -17,7 +17,7 @@ RUN if [ -z "$ANKI_VERSION" ]; then \
     fi && \
     echo "Building Anki sync server version: $ANKI_VERSION" && \
     echo "$ANKI_VERSION" > /anki_version.txt && \
-    cargo install --git https://github.com/ankitects/anki.git \
+    cargo install --locked --git https://github.com/ankitects/anki.git \
       --tag ${ANKI_VERSION} \
       anki-sync-server
 
@@ -27,7 +27,7 @@ FROM debian:bookworm-slim
 # Install runtime dependencies including Caddy for TLS
 RUN apt-get update && apt-get install -y \
     ca-certificates wget curl bash tzdata sqlite3 openssl \
-    jq netcat-openbsd python3 python3-pip procps cron msmtp \
+    jq netcat-openbsd python3 python3-pip procps cron msmtp pigz \
     fail2ban iptables \
     debian-keyring debian-archive-keyring apt-transport-https \
     && rm -rf /var/lib/apt/lists/*
@@ -40,7 +40,7 @@ RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --de
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages
-RUN pip3 install --break-system-packages --no-cache-dir flask boto3
+RUN pip3 install --break-system-packages --no-cache-dir flask boto3 waitress
 
 # Vendor dashboard JS so it works without internet access
 RUN mkdir -p /usr/local/share/anki-dashboard \

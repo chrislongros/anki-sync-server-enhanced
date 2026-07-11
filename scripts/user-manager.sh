@@ -117,6 +117,7 @@ add_user() {
     
     # Add to config file
     echo "SYNC_USER${next_num}=${username}:${password}" >> "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
     
     echo ""
     echo "User added successfully!"

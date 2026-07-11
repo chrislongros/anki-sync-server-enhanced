@@ -51,7 +51,14 @@ def requires_auth(f):
         return f(*args, **kwargs)
     return decorated
 
-def get_dir_size(path):
+_dir_size_cache = {}
+
+def get_dir_size(path, ttl=60):
+    # The 10s dashboard poll must not rescan gigabytes of media every time
+    now = time.time()
+    cached = _dir_size_cache.get(path)
+    if cached and now - cached[0] < ttl:
+        return cached[1]
     total = 0
     try:
         for entry in Path(path).rglob('*'):
@@ -59,6 +66,7 @@ def get_dir_size(path):
                 total += entry.stat().st_size
     except Exception:
         pass
+    _dir_size_cache[path] = (now, total)
     return total
 
 def format_bytes(size):
@@ -356,7 +364,7 @@ def api_backups():
 @requires_auth
 def api_create_backup():
     try:
-        result = subprocess.run(['/usr/local/bin/backup.sh'], capture_output=True, text=True, timeout=300)
+        result = subprocess.run(['/usr/local/bin/backup.sh'], capture_output=True, text=True, timeout=1800)
         return jsonify({'success': result.returncode == 0, 'message': 'Backup created' if result.returncode == 0 else result.stderr or 'Failed'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -410,7 +418,7 @@ def api_system():
 def api_features():
     return jsonify({k: os.environ.get(v, 'false').lower() == 'true' for k, v in
                     [('TLS', 'TLS_ENABLED'), ('Backups', 'BACKUP_ENABLED'), ('S3 Upload', 'S3_BACKUP_ENABLED'), ('Metrics', 'METRICS_ENABLED'),
-                     ('Fail2Ban', 'FAIL2BAN_ENABLED'), ('Notifications', 'NOTIFY_ENABLED'), ('Rate Limit', 'RATE_LIMIT_ENABLED')]})
+                     ('Fail2Ban', 'FAIL2BAN_ENABLED'), ('Notifications', 'NOTIFY_ENABLED'), ('Email', 'EMAIL_ENABLED')]})
 
 @app.route('/api/syncs')
 @requires_auth
@@ -519,6 +527,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
     </div>
 <script>
 let logType='sync',chart,cd=10,darkMode=true,expandedUser=null;
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 const storageColors={collections:'#06b6d4',media:'#3b82f6',backups:'#a855f7',logs:'#64748b'};
 
 document.addEventListener('DOMContentLoaded',()=>{initChart();refreshAll();setInterval(()=>{cd--;document.getElementById('cd').textContent=cd;if(cd<=0){cd=10;refreshAll();}},1000);});
@@ -695,7 +704,7 @@ async function loadLogs(t){
                 if(l.includes('ERROR')||l.includes('FAILED'))c='text-red-400';
                 else if(l.includes('SUCCESS')||l.includes('COMPLETE'))c='text-green-400';
                 else if(l.includes('WARN'))c='text-yellow-400';
-                return`<div class="${c} border-b border-slate-800/50 py-1">${l.replace(/</g,'&lt;')}</div>`;
+                return`<div class="${c} border-b border-slate-800/50 py-1">${esc(l)}</div>`;
             }).join('');
             v.scrollTop=v.scrollHeight;
         }
@@ -738,5 +747,10 @@ def dashboard():
     return render_template_string(DASHBOARD_HTML)
 
 if __name__ == '__main__':
-    print(f"Starting dashboard on port {os.environ.get('DASHBOARD_PORT', 8081)}")
-    app.run(host='0.0.0.0', port=int(os.environ.get('DASHBOARD_PORT', 8081)), threaded=True)
+    port = int(os.environ.get('DASHBOARD_PORT', 8081))
+    print(f"Starting dashboard on port {port}")
+    try:
+        from waitress import serve
+        serve(app, host='0.0.0.0', port=port, threads=8)
+    except ImportError:
+        app.run(host='0.0.0.0', port=port, threaded=True)

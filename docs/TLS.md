@@ -136,3 +136,7 @@ curl -v http://anki.yourdomain.com
 ### Mixed HTTP/HTTPS
 
 The server always runs HTTP internally on port 8080. Caddy handles TLS termination and proxies to it. You can still access HTTP directly if needed (for health checks, internal networks, etc.).
+
+> **Note:** In Let's Encrypt mode Caddy listens on ports **443** (and **80**
+> for the ACME HTTP challenge) inside the container, regardless of
+> `TLS_PORT`. Publish `443:443` and `80:80` for certificate issuance to work.

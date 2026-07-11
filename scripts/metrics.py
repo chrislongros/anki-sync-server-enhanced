@@ -22,7 +22,14 @@ def read_int(path):
         return 0
 
 
-def dir_size(path):
+_size_cache = {}
+
+
+def dir_size(path, ttl=60):
+    now = time.time()
+    cached = _size_cache.get(path)
+    if cached and now - cached[0] < ttl:
+        return cached[1]
     total = 0
     try:
         for entry in Path(path).rglob('*'):
@@ -30,6 +37,7 @@ def dir_size(path):
                 total += entry.stat().st_size
     except OSError:
         pass
+    _size_cache[path] = (now, total)
     return total
 
 

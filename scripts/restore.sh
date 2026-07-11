@@ -162,12 +162,27 @@ do_restore() {
     
     log "Restoring from $(basename "$backup_path")..."
     
-    # Create safety backup
+    # Create safety backup (SQLite-safe staging, same approach as backup.sh)
     SAFETY_BACKUP="pre_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
     if [ -d "$DATA_DIR" ] && [ "$(ls -A "$DATA_DIR" 2>/dev/null)" ]; then
         log "Creating safety backup: $SAFETY_BACKUP"
-        cd "$DATA_DIR"
-        tar -czf "${BACKUP_DIR}/${SAFETY_BACKUP}" . 2>/dev/null || true
+        STAGING=$(mktemp -d "${BACKUP_DIR}/.staging.XXXXXX")
+        (
+            cd "$DATA_DIR"
+            find . -type d -exec mkdir -p "$STAGING/{}" \;
+            find . -type f ! -name '*.anki2*' ! -name '*.db' ! -name '*-wal' ! -name '*-shm' \
+                -exec cp -a {} "$STAGING/{}" \;
+            find . -type f \( -name '*.anki2' -o -name '*.db' \) -print0 | while IFS= read -r -d '' db; do
+                if ! sqlite3 -cmd '.timeout 10000' "$db" ".backup '$STAGING/$db'" 2>/dev/null; then
+                    cp -a "$db" "$STAGING/$db"
+                    for sib in "$db-wal" "$db-shm"; do
+                        [ -f "$sib" ] && cp -a "$sib" "$STAGING/$sib" || true
+                    done
+                fi
+            done
+            tar -C "$STAGING" -czf "${BACKUP_DIR}/${SAFETY_BACKUP}" .
+        ) || log "WARN: safety backup failed"
+        rm -rf "$STAGING"
     fi
     
     # Clear and restore

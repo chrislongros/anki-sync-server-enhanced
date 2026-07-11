@@ -168,7 +168,11 @@ find . -type f \( -name '*.anki2' -o -name '*.db' \) -print0 | while IFS= read -
     fi
 done
 
-tar -C "$STAGING" -czf "${BACKUP_DIR}/${BACKUP_FILE}" .
+if command -v pigz > /dev/null 2>&1; then
+    tar -C "$STAGING" -I pigz -cf "${BACKUP_DIR}/${BACKUP_FILE}" .
+else
+    tar -C "$STAGING" -czf "${BACKUP_DIR}/${BACKUP_FILE}" .
+fi
 rm -rf "$STAGING"
 trap - EXIT
 

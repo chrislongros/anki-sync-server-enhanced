@@ -405,7 +405,9 @@ from           ${EMAIL_FROM}
 user           ${EMAIL_USER}
 password       ${EMAIL_PASS}
 EOF
-    chmod 600 /etc/msmtprc
+    # group-readable: notify.sh/backup.sh run msmtp as the anki user
+    chgrp anki /etc/msmtprc
+    chmod 640 /etc/msmtprc
 fi
 
 # -----------------------------------------------------------------------------

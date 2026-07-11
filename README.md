@@ -6,7 +6,7 @@
 
 Production-ready Docker image for self-hosted Anki sync server with backups, monitoring, dashboard, and security features.
 
-![Dashboard](docs/dashboard.png)
+![Dashboard](https://raw.githubusercontent.com/chrislongros/anki-sync-server-enhanced/master/docs/dashboard.png)
 
 
 ## Why This Image?
@@ -95,7 +95,7 @@ Protect with basic auth using `DASHBOARD_AUTH=admin:password`
 
 <!-- 
 Screenshot placeholder - add actual screenshot
-![Dashboard Screenshot](docs/dashboard.png)
+![Dashboard Screenshot](https://raw.githubusercontent.com/chrislongros/anki-sync-server-enhanced/master/docs/dashboard.png)
 -->
 
 ## Configuration Reference
@@ -161,9 +161,6 @@ Screenshot placeholder - add actual screenshot
 | `FAIL2BAN_ENABLED` | Enable fail2ban | `false` |
 | `FAIL2BAN_MAX_RETRIES` | Max failures | `5` |
 | `FAIL2BAN_BAN_TIME` | Ban seconds | `3600` |
-| `RATE_LIMIT_ENABLED` | Enable rate limit | `false` |
-| `RATE_LIMIT_REQUESTS` | Max requests | `100` |
-| `RATE_LIMIT_WINDOW` | Window seconds | `60` |
 
 
 ### TLS / HTTPS
