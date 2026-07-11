@@ -148,8 +148,29 @@ mkdir -p "$BACKUP_DIR"
 DATA_SIZE=$(du -sh "$DATA_DIR" 2>/dev/null | cut -f1 || echo "unknown")
 log "Data directory size: $DATA_SIZE"
 
+# Snapshot SQLite DBs via .backup so a mid-backup sync can't corrupt the
+# archive; stage under BACKUP_DIR, not /tmp (may be a small tmpfs)
+STAGING=$(mktemp -d "${BACKUP_DIR}/.staging.XXXXXX")
+trap 'rm -rf "$STAGING"' EXIT
+
 cd "$DATA_DIR"
-tar -czf "${BACKUP_DIR}/${BACKUP_FILE}" .
+find . -type d -exec mkdir -p "$STAGING/{}" \;
+find . -type f ! -name '*.anki2*' ! -name '*.db' ! -name '*-wal' ! -name '*-shm' \
+    -exec cp -a {} "$STAGING/{}" \;
+find . -type f \( -name '*.anki2' -o -name '*.db' \) -print0 | while IFS= read -r -d '' db; do
+    if ! sqlite3 -cmd '.timeout 10000' "$db" ".backup '$STAGING/$db'" 2>/dev/null; then
+        # DB locked by the server (e.g. media.db): fall back to raw copy
+        cp -a "$db" "$STAGING/$db"
+        for sib in "$db-wal" "$db-shm"; do
+            [ -f "$sib" ] && cp -a "$sib" "$STAGING/$sib" || true
+        done
+        log "WARN: $db locked, copied raw instead of sqlite snapshot"
+    fi
+done
+
+tar -C "$STAGING" -czf "${BACKUP_DIR}/${BACKUP_FILE}" .
+rm -rf "$STAGING"
+trap - EXIT
 
 BACKUP_SIZE=$(du -sh "${BACKUP_DIR}/${BACKUP_FILE}" | cut -f1)
 log "Backup created: $BACKUP_FILE ($BACKUP_SIZE)"
@@ -165,7 +186,7 @@ if [ "$S3_BACKUP_ENABLED" = "true" ]; then
 fi
 
 log "Cleaning up backups older than $RETENTION_DAYS days..."
-DELETED_COUNT=$(find "$BACKUP_DIR" -name "anki_backup_*.tar.gz" -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l || echo 0)
+DELETED_COUNT=$(find "$BACKUP_DIR" \( -name "anki_backup_*.tar.gz" -o -name "pre_restore_*.tar.gz" \) -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l || echo 0)
 log "Deleted $DELETED_COUNT old local backup(s)"
 
 BACKUP_COUNT=$(ls -1 "$BACKUP_DIR"/anki_backup_*.tar.gz 2>/dev/null | wc -l || echo 0)

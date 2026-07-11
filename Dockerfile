@@ -1,7 +1,8 @@
 # =============================================================================
 # Anki Sync Server Enhanced - Comprehensive Docker Image
 # =============================================================================
-FROM rustlang/rust:nightly-slim AS builder
+# Matches the toolchain Anki pins in rust-toolchain.toml
+FROM rust:1.92-slim AS builder
 RUN apt-get update && apt-get install -y \
     git \
     pkg-config \
@@ -39,7 +40,12 @@ RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --de
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages
-RUN pip3 install --break-system-packages --no-cache-dir flask boto3 argon2-cffi
+RUN pip3 install --break-system-packages --no-cache-dir flask boto3
+
+# Vendor dashboard JS so it works without internet access
+RUN mkdir -p /usr/local/share/anki-dashboard \
+    && curl -fsSL -o /usr/local/share/anki-dashboard/chart.umd.js https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.js \
+    && curl -fsSL -o /usr/local/share/anki-dashboard/tailwind.js https://cdn.tailwindcss.com/3.4.16
 
 # Create user and directories
 RUN useradd -m -s /bin/bash -u 1000 anki \

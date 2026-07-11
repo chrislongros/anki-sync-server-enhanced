@@ -14,8 +14,18 @@ PGID=${PGID:-1000}
 if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
     groupmod -o -g "$PGID" anki 2>/dev/null || true
     usermod -o -u "$PUID" anki 2>/dev/null || true
-    chown -R anki:anki /data /backups /config /var/log/anki /var/lib/anki 2>/dev/null || true
 fi
+
+# Fix ownership of volumes created by older root-running releases
+for dir in /data /backups /config /var/log/anki /var/lib/anki; do
+    if [ -d "$dir" ] && [ "$(stat -c %u "$dir")" != "$(id -u anki)" ]; then
+        chown -R anki:anki "$dir" 2>/dev/null || true
+    fi
+done
+
+run_as_anki() {
+    setpriv --reuid anki --regid anki --init-groups "$@"
+}
 
 # -----------------------------------------------------------------------------
 # Configuration with defaults
@@ -26,8 +36,12 @@ export SYNC_PORT="${SYNC_PORT:-8080}"
 export LOG_LEVEL="${LOG_LEVEL:-info}"
 export TZ="${TZ:-UTC}"
 
-# Password hashing (compatible with official Anki)
-export PASSWORDS_HASHED="${PASSWORDS_HASHED:-0}"
+# Upstream enables hashed mode if this var exists at all, so leave it unset
+if [ "$PASSWORDS_HASHED" = "true" ] || [ "$PASSWORDS_HASHED" = "1" ]; then
+    export PASSWORDS_HASHED=1
+else
+    unset PASSWORDS_HASHED
+fi
 
 # Backup settings
 export BACKUP_ENABLED="${BACKUP_ENABLED:-false}"
@@ -171,6 +185,8 @@ send_email() {
 # Graceful shutdown handler
 # -----------------------------------------------------------------------------
 shutdown_handler() {
+    # bash 5.2 kills the shell mid-handler under set -e (fixed in 5.3)
+    set +e
     log_info "Received shutdown signal, stopping gracefully..."
     send_notification "Server shutting down" "Anki Sync Server"
 
@@ -188,6 +204,11 @@ shutdown_handler() {
     # Kill metrics server if running
     if [ -n "$METRICS_PID" ]; then
         kill -TERM "$METRICS_PID" 2>/dev/null || true
+    fi
+
+    # Kill dashboard if running
+    if [ -n "$DASHBOARD_PID" ]; then
+        kill -TERM "$DASHBOARD_PID" 2>/dev/null || true
     fi
 
     # Kill sync output monitor if running
@@ -211,7 +232,7 @@ trap shutdown_handler SIGTERM SIGINT SIGQUIT
 # -----------------------------------------------------------------------------
 # Docker secrets support
 # -----------------------------------------------------------------------------
-for var in $(env | grep -E '^SYNC_USER[0-9]+_FILE=' | sort); do
+while IFS= read -r var; do
     name="${var%%=*}"
     file="${var#*=}"
     base_name="${name%_FILE}"
@@ -221,7 +242,7 @@ for var in $(env | grep -E '^SYNC_USER[0-9]+_FILE=' | sort); do
     else
         log_warn "Secret file not found: $file"
     fi
-done
+done < <(env | grep -E '^SYNC_USER[0-9]+_FILE=' | sort)
 
 load_secret() {
     local var_name="$1"
@@ -243,42 +264,24 @@ load_secret "DASHBOARD_AUTH"
 # -----------------------------------------------------------------------------
 # Build user list
 # -----------------------------------------------------------------------------
-USERS=""
 USER_COUNT=0
 USER_NAMES=""
 
-for var in $(env | grep -E '^SYNC_USER[0-9]+=' | sort -t= -k1 -V); do
+# Save user list for dashboard (one username per line)
+: > /var/lib/anki/users.txt
+while IFS= read -r var; do
     value="${var#*=}"
     username="${value%%:*}"
-
-    if [ -n "$USERS" ]; then
-        USERS="$USERS,$value"
-        USER_NAMES="$USER_NAMES, $username"
-    else
-        USERS="$value"
-        USER_NAMES="$username"
-    fi
+    USER_NAMES="${USER_NAMES:+$USER_NAMES, }$username"
     USER_COUNT=$((USER_COUNT + 1))
-done
+    echo "$username" >> /var/lib/anki/users.txt
+done < <(env | grep -E '^SYNC_USER[0-9]+=' | sort -t= -k1 -V)
 
-if [ -z "$USERS" ]; then
+if [ "$USER_COUNT" -eq 0 ]; then
     log_error "No users defined. Set SYNC_USER1=username:password"
     exit 1
 fi
 
-export SYNC_USER="$USERS"
-
-if [ "$PASSWORDS_HASHED" = "true" ]; then
-    export PASSWORDS_HASHED="1"
-fi
-
-# Save user list for dashboard (one username per line)
-: > /var/lib/anki/users.txt
-for var in $(env | grep -E '^SYNC_USER[0-9]+=' | sort -t= -k1 -V); do
-    value="${var#*=}"
-    username="${value%%:*}"
-    echo "$username" >> /var/lib/anki/users.txt
-done
 echo "$USER_COUNT" > /var/lib/anki/user_count.txt
 
 # Initialize metrics tracking files
@@ -325,11 +328,11 @@ EOF
     auto_https disable_redirects
 }
 
-localhost:${TLS_PORT} {
+https://:${TLS_PORT} {
     tls ${TLS_CERT} ${TLS_KEY}
-    
+
     reverse_proxy localhost:${SYNC_PORT}
-    
+
     log {
         output file /var/log/anki/caddy.log
         format console
@@ -346,11 +349,13 @@ EOF
     auto_https disable_redirects
 }
 
-localhost:${TLS_PORT} {
-    tls internal
-    
+https://:${TLS_PORT} {
+    tls internal {
+        on_demand
+    }
+
     reverse_proxy localhost:${SYNC_PORT}
-    
+
     log {
         output file /var/log/anki/caddy.log
         format console
@@ -418,6 +423,7 @@ logpath = /var/log/anki/auth.log
 maxretry = ${FAIL2BAN_MAX_RETRIES}
 bantime = ${FAIL2BAN_BAN_TIME}
 findtime = ${FAIL2BAN_FIND_TIME}
+ignoreip = 127.0.0.1/8 ::1
 action = iptables-allports[name=anki, protocol=all]
 EOF
 
@@ -459,7 +465,7 @@ if [ "$DASHBOARD_ENABLED" = "true" ]; then
     export LOG_DIR="/var/log/anki"
     export TLS_ENABLED="$TLS_ENABLED"
     
-    python3 /usr/local/bin/dashboard.py &
+    run_as_anki python3 /usr/local/bin/dashboard.py &
     DASHBOARD_PID=$!
     
     sleep 1
@@ -474,43 +480,7 @@ fi
 # -----------------------------------------------------------------------------
 if [ "$METRICS_ENABLED" = "true" ]; then
     log_info "Starting metrics server on port $METRICS_PORT"
-
-    START_TIME=$(date +%s)
-
-    # Start simple metrics server in background
-    (
-        while true; do
-            # Collect metrics
-            USERS_TOTAL=$USER_COUNT
-            DATA_SIZE=$(du -sb "$SYNC_BASE" 2>/dev/null | cut -f1 || echo 0)
-            BACKUP_COUNT=$(ls -1 /backups/*.tar.gz 2>/dev/null | wc -l || echo 0)
-            UPTIME=$(($(date +%s) - START_TIME))
-
-            # Create metrics response
-            METRICS="# HELP anki_sync_users_total Total number of configured users
-# TYPE anki_sync_users_total gauge
-anki_sync_users_total $USERS_TOTAL
-
-# HELP anki_sync_data_bytes Total data size in bytes
-# TYPE anki_sync_data_bytes gauge
-anki_sync_data_bytes $DATA_SIZE
-
-# HELP anki_sync_backup_count Number of backup files
-# TYPE anki_sync_backup_count gauge
-anki_sync_backup_count $BACKUP_COUNT
-
-# HELP anki_sync_uptime_seconds Server uptime in seconds
-# TYPE anki_sync_uptime_seconds counter
-anki_sync_uptime_seconds $UPTIME
-
-# HELP anki_sync_info Server information
-# TYPE anki_sync_info gauge
-anki_sync_info{version=\"$ANKI_VERSION\",tls=\"$TLS_ENABLED\"} 1
-"
-            # Simple HTTP server using netcat
-            echo -e "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n$METRICS" | nc -l -p "$METRICS_PORT" -q 1 > /dev/null 2>&1 || true
-        done
-    ) &
+    ANKI_VERSION="$ANKI_VERSION" run_as_anki python3 /usr/local/bin/metrics.py &
     METRICS_PID=$!
 fi
 
@@ -577,27 +547,37 @@ echo $(date +%s) > /var/lib/anki/start_time.txt 2>/dev/null || true
 # -----------------------------------------------------------------------------
 # Monitor sync server output for sync/auth events
 # -----------------------------------------------------------------------------
+# Server request lines: request{uri="..." ip=...}: finished ... httpstatus=NNN
 monitor_sync_output() {
     local logfile="$1"
     tail -F "$logfile" 2>/dev/null | sed -u 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
-        # Detect sync operations (upload/download endpoints indicate a sync)
-        if echo "$line" | grep -qiE '(sync|upload|download|collection)' 2>/dev/null; then
-            if echo "$line" | grep -qiE '(200|ok|complete|success)' 2>/dev/null; then
-                # Extract user info if available
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] SYNC COMPLETE $line" >> /var/log/anki/sync.log
-                # Increment sync count
-                count=$(cat /var/lib/anki/sync_count.txt 2>/dev/null || echo 0)
-                echo $((count + 1)) > /var/lib/anki/sync_count.txt
-            fi
-        fi
-        # Detect auth events (hostKey endpoint is auth)
-        if echo "$line" | grep -qiE '(host_?key|auth|login)' 2>/dev/null; then
-            if echo "$line" | grep -qiE '(200|ok|success)' 2>/dev/null; then
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] AUTH_SUCCESS $line" >> /var/log/anki/auth.log
-            elif echo "$line" | grep -qiE '(401|403|fail|denied|error|reject)' 2>/dev/null; then
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] AUTH_FAILED $line" >> /var/log/anki/auth.log
-            fi
-        fi
+        case "$line" in
+            *'finished'*'httpstatus='*) ;;
+            *) continue ;;
+        esac
+        status=$(echo "$line" | grep -o 'httpstatus=[0-9]*' | head -1)
+        status="${status#httpstatus=}"
+        ip=$(echo "$line" | grep -o 'ip=[^ }]*' | head -1)
+        ip="${ip#ip=}"; ip="${ip%\"}"; ip="${ip#\"}"
+
+        case "$line" in
+            *'uri="/sync/hostKey"'*)
+                if [ "$status" = "200" ]; then
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] AUTH_SUCCESS ip=\"${ip:-unknown}\"" >> /var/log/anki/auth.log
+                else
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] AUTH_FAILED ip=\"${ip:-unknown}\"" >> /var/log/anki/auth.log
+                fi
+                ;;
+            *'uri="/sync/finish"'*)
+                if [ "$status" = "200" ]; then
+                    uid=$(echo "$line" | grep -o 'uid="[^"]*"' | head -1)
+                    uid="${uid#uid=\"}"; uid="${uid%\"}"
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] SYNC_COMPLETE uid=\"${uid:-unknown}\"" >> /var/log/anki/sync.log
+                    count=$(cat /var/lib/anki/sync_count.txt 2>/dev/null || echo 0)
+                    echo $((count + 1)) > /var/lib/anki/sync_count.txt
+                fi
+                ;;
+        esac
     done
 }
 
@@ -605,8 +585,7 @@ monitor_sync_output() {
 # -----------------------------------------------------------------------------
 log_info "Starting Anki sync server..."
 
-# Run sync server with output captured to server.log
-anki-sync-server >> /var/log/anki/server.log 2>&1 &
+run_as_anki anki-sync-server >> /var/log/anki/server.log 2>&1 &
 SYNC_PID=$!
 
 # Start monitoring sync server output for sync/auth events
@@ -615,9 +594,8 @@ MONITOR_PID=$!
 
 log_info "Sync server started with PID $SYNC_PID"
 
-# Wait for the sync server process
-wait "$SYNC_PID"
-EXIT_CODE=$?
+# || keeps set -e from skipping the cleanup below
+wait "$SYNC_PID" && EXIT_CODE=0 || EXIT_CODE=$?
 
 # Stop the monitor
 kill "$MONITOR_PID" 2>/dev/null || true

@@ -4,7 +4,9 @@ Anki Sync Server Enhanced Dashboard v2
 Features: Dark/light mode, storage breakdown, collection details, container info, download backups
 """
 
+import hmac
 import os
+import re
 import subprocess
 import time
 import sqlite3
@@ -12,9 +14,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
 
-from flask import Flask, render_template_string, jsonify, request, Response, send_file
+from flask import Flask, render_template_string, jsonify, request, Response, send_from_directory
 
 app = Flask(__name__)
+
+STATIC_DIR = os.environ.get('DASHBOARD_STATIC_DIR', '/usr/local/share/anki-dashboard')
 
 # Configuration
 DATA_DIR = os.environ.get('SYNC_BASE', '/data')
@@ -28,8 +32,9 @@ def check_auth(username, password):
         return True
     expected = DASHBOARD_AUTH.split(':', 1)
     if len(expected) != 2:
-        return True
-    return username == expected[0] and password == expected[1]
+        return False  # malformed DASHBOARD_AUTH locks, never opens
+    return (hmac.compare_digest(username, expected[0])
+            & hmac.compare_digest(password, expected[1]))
 
 def authenticate():
     return Response('Authentication required', 401,
@@ -52,7 +57,7 @@ def get_dir_size(path):
         for entry in Path(path).rglob('*'):
             if entry.is_file():
                 total += entry.stat().st_size
-    except:
+    except Exception:
         pass
     return total
 
@@ -77,7 +82,7 @@ def read_file_safe(path, default=''):
     try:
         with open(path, 'r') as f:
             return f.read().strip()
-    except:
+    except Exception:
         return default
 
 def read_log_lines(path, lines=100):
@@ -85,7 +90,7 @@ def read_log_lines(path, lines=100):
         result = subprocess.run(['tail', '-n', str(lines), path],
                                 capture_output=True, text=True, timeout=5)
         return result.stdout.strip().split('\n') if result.stdout else []
-    except:
+    except Exception:
         return []
 
 def get_users():
@@ -108,13 +113,13 @@ def get_users():
 def get_collection_info(db_path):
     """Get card count from Anki collection database"""
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM cards")
         cards = cursor.fetchone()[0]
         conn.close()
         return {'cards': cards}
-    except:
+    except Exception:
         return {'cards': 0}
 
 def get_user_details():
@@ -135,7 +140,7 @@ def get_user_details():
             info = get_collection_info(str(db_file))
             try:
                 mtime = datetime.fromtimestamp(db_file.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
-            except:
+            except Exception:
                 mtime = 'Unknown'
             collections.append({
                 'name': db_file.name,
@@ -152,11 +157,11 @@ def get_user_details():
             media_size = get_dir_size(media_dir)
             try:
                 media_files = len([f for f in os.listdir(media_dir) if os.path.isfile(os.path.join(media_dir, f))])
-            except:
+            except Exception:
                 media_files = 0
             try:
                 mtime = datetime.fromtimestamp(os.path.getmtime(media_dir)).strftime('%Y-%m-%d %H:%M')
-            except:
+            except Exception:
                 mtime = 'Unknown'
             collections.append({
                 'name': 'collection.media',
@@ -169,7 +174,7 @@ def get_user_details():
         
         try:
             last_sync = datetime.fromtimestamp(os.path.getmtime(user_dir)).strftime('%Y-%m-%d %H:%M')
-        except:
+        except Exception:
             last_sync = 'Unknown'
         
         details.append({
@@ -231,14 +236,14 @@ def get_container_info():
                         if len(cid) >= 12:
                             info['container_id'] = cid[:12]
                     break
-    except:
+    except Exception:
         pass
     
     # Fallback to hostname
     if info['container_id'] == 'N/A':
         try:
             info['container_id'] = os.environ.get('HOSTNAME', 'unknown')[:12]
-        except:
+        except Exception:
             pass
     
     return info
@@ -263,11 +268,12 @@ def get_auth_stats():
     return {'success': success, 'failed': failed}
 
 def get_sync_chart_data():
+    # [2026-07-11 15:04:05] SYNC_COMPLETE uid="user"
     lines = read_log_lines(os.path.join(LOG_DIR, 'sync.log'), 5000)
     daily = {(datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d'): 0 for i in range(7)}
     for line in lines:
-        if 'SYNC' in line and 'COMPLETE' in line:
-            date = line.split()[0] if line.split() else ''
+        if 'SYNC_COMPLETE' in line or ('SYNC' in line and 'COMPLETE' in line):
+            date = line[1:11]
             if date in daily:
                 daily[date] += 1
     data = sorted(daily.items())
@@ -281,29 +287,28 @@ def get_system_stats():
         stats['disk_total'] = st.f_frsize * st.f_blocks
         stats['disk_used'] = stats['disk_total'] - st.f_frsize * st.f_bavail
         stats['disk_percent'] = (stats['disk_used'] / stats['disk_total'] * 100) if stats['disk_total'] else 0
-    except: pass
+    except Exception: pass
     try:
         with open('/proc/meminfo') as f:
             mem = {l.split()[0].rstrip(':'): int(l.split()[1]) * 1024 for l in f if len(l.split()) >= 2}
         stats['memory_total'] = mem.get('MemTotal', 0)
         stats['memory_used'] = stats['memory_total'] - mem.get('MemAvailable', mem.get('MemFree', 0))
         stats['memory_percent'] = (stats['memory_used'] / stats['memory_total'] * 100) if stats['memory_total'] else 0
-    except: pass
+    except Exception: pass
     try:
         with open('/proc/loadavg') as f:
             p = f.read().split()
             stats['load_avg'] = [float(p[0]), float(p[1]), float(p[2])]
-    except: pass
+    except Exception: pass
     return stats
 
 def get_recent_syncs():
     lines = read_log_lines(os.path.join(LOG_DIR, 'sync.log'), 200)
     syncs = []
     for line in reversed(lines):
-        if 'SYNC' in line and 'COMPLETE' in line:
-            parts = line.split()
-            if len(parts) >= 4:
-                syncs.append({'time': parts[0] + ' ' + parts[1], 'user': parts[3].replace('user=', '')})
+        if 'SYNC_COMPLETE' in line or ('SYNC' in line and 'COMPLETE' in line):
+            m = re.search(r'uid="([^"]*)"', line)
+            syncs.append({'time': line[1:20], 'user': m.group(1) if m else 'unknown'})
             if len(syncs) >= 10:
                 break
     return syncs
@@ -359,12 +364,16 @@ def api_create_backup():
 @app.route('/api/backups/download/<filename>')
 @requires_auth
 def api_download_backup(filename):
-    if '..' in filename or '/' in filename:
+    if filename != os.path.basename(filename) or not filename.endswith('.tar.gz'):
         return jsonify({'error': 'Invalid filename'}), 400
-    filepath = os.path.join(BACKUP_DIR, filename)
-    if os.path.exists(filepath):
-        return send_file(filepath, as_attachment=True)
-    return jsonify({'error': 'File not found'}), 404
+    try:
+        return send_from_directory(BACKUP_DIR, filename, as_attachment=True)
+    except FileNotFoundError:
+        return jsonify({'error': 'File not found'}), 404
+
+@app.route('/static/<filename>')
+def static_assets(filename):
+    return send_from_directory(STATIC_DIR, filename)
 
 @app.route('/api/notify/test', methods=['POST'])
 @requires_auth
@@ -419,8 +428,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Anki Sync Server</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/tailwind.js"></script>
+    <script src="/static/chart.umd.js"></script>
 </head>
 <body class="min-h-screen p-6 bg-slate-900 text-slate-200" id="body">
     <div class="max-w-6xl mx-auto">

@@ -2,7 +2,7 @@
 
 [![Docker Hub](https://img.shields.io/docker/pulls/chrislongros/anki-sync-server-enhanced)](https://hub.docker.com/r/chrislongros/anki-sync-server-enhanced)
 [![GitHub Actions](https://github.com/chrislongros/anki-sync-server-enhanced/actions/workflows/build.yml/badge.svg)](https://github.com/chrislongros/anki-sync-server-enhanced/actions)
-[![Anki Version](https://img.shields.io/badge/anki-25.09.4-green)](https://github.com/ankitects/anki/releases/tag/25.09.4)
+[![Anki Version](https://img.shields.io/badge/anki-26.05-green)](https://github.com/ankitects/anki/releases/tag/26.05)
 
 Production-ready Docker image for self-hosted Anki sync server with backups, monitoring, dashboard, and security features.
 
@@ -46,7 +46,7 @@ docker run -d \
   -p 8080:8080 \
   -e SYNC_USER1=user:password \
   -v anki_data:/data \
-  chrislongros/anki-sync-server-enhanced:25.09.4-1
+  chrislongros/anki-sync-server-enhanced:26.05
 ```
 
 Then configure your Anki client to sync to `http://your-server:8080/`
@@ -56,7 +56,7 @@ Then configure your Anki client to sync to `http://your-server:8080/`
 ```yaml
 services:
   anki-sync-server:
-    image: chrislongros/anki-sync-server-enhanced:25.09.4-1
+    image: chrislongros/anki-sync-server-enhanced:26.05
     container_name: anki-sync
     ports:
       - "8080:8080"   # Sync server (HTTP)
@@ -110,7 +110,7 @@ Screenshot placeholder - add actual screenshot
 | `LOG_LEVEL` | debug/info/warn/error | `info` |
 | `TZ` | Timezone | `UTC` |
 | `PUID` / `PGID` | File permissions | `1000` |
-| `PASSWORDS_HASHED` | Use hashed passwords | `0` |
+| `PASSWORDS_HASHED` | Set to `true` to supply pbkdf2 password hashes instead of plain text (generate with `user-manager.sh hash`); leave unset otherwise | unset |
 
 ### Backups
 
@@ -189,7 +189,7 @@ docker run -d \
   -e TLS_EMAIL=you@email.com \
   -v anki_data:/data \
   -v anki_config:/config \
-  chrislongros/anki-sync-server-enhanced:25.09.4-1
+  chrislongros/anki-sync-server-enhanced:26.05
 ```
 
 **Mode 2: Manual certificates**
@@ -202,7 +202,7 @@ docker run -d \
   -e TLS_KEY=/config/certs/privkey.pem \
   -v ./certs:/config/certs:ro \
   -v anki_data:/data \
-  chrislongros/anki-sync-server-enhanced:25.09.4-1
+  chrislongros/anki-sync-server-enhanced:26.05
 ```
 
 **Mode 3: Self-signed (local/testing)**
@@ -212,7 +212,7 @@ docker run -d \
   -e SYNC_USER1=user:password \
   -e TLS_ENABLED=true \
   -v anki_data:/data \
-  chrislongros/anki-sync-server-enhanced:25.09.4-1
+  chrislongros/anki-sync-server-enhanced:26.05
 ```
 
 Then configure clients to use `https://your-server:8443/`
@@ -284,7 +284,7 @@ For secure credential management:
 ```yaml
 services:
   anki-sync-server:
-    image: chrislongros/anki-sync-server-enhanced:25.09.4-1
+    image: chrislongros/anki-sync-server-enhanced:26.05
     environment:
       - SYNC_USER1_FILE=/run/secrets/anki_user1
     secrets:
@@ -299,7 +299,7 @@ secrets:
 
 | Registry | Image |
 |----------|-------|
-| Docker Hub | `chrislongros/anki-sync-server-enhanced:25.09.4-1` |
+| Docker Hub | `chrislongros/anki-sync-server-enhanced:26.05` |
 
 ## NAS Installation
 
@@ -334,7 +334,7 @@ secrets:
 docker build -t anki-sync-server-enhanced .
 
 # Specify Anki version
-docker build --build-arg ANKI_VERSION=25.09.4 -t anki-sync-server-enhanced:25.09.4-1 .
+docker build --build-arg ANKI_VERSION=26.05 -t anki-sync-server-enhanced:26.05 .
 ```
 
 ## Credits

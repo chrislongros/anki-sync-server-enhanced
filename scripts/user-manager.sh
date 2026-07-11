@@ -42,13 +42,20 @@ generate_password() {
     openssl rand -base64 16 | tr -d '/+=' | head -c 16
 }
 
+# The server verifies with the Rust pbkdf2 crate; emit a matching PHC string
 hash_password() {
-    local password="$1"
-    python3 -c "
-from argon2 import PasswordHasher
-ph = PasswordHasher()
-print(ph.hash('$password'))
-"
+    HASH_PW="$1" python3 << 'EOF'
+import base64
+import hashlib
+import os
+
+password = os.environ['HASH_PW'].encode()
+salt = os.urandom(16)
+rounds = 600_000
+dk = hashlib.pbkdf2_hmac('sha256', password, salt, rounds, dklen=32)
+b64 = lambda b: base64.b64encode(b).decode().rstrip('=')
+print(f"$pbkdf2-sha256$i={rounds},l=32${b64(salt)}${b64(dk)}")
+EOF
 }
 
 list_users() {
