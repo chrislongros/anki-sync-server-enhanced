@@ -387,9 +387,11 @@ def static_assets(filename):
 @requires_auth
 def api_test_notify():
     try:
-        result = subprocess.run(['/usr/local/bin/notify.sh', 'Test notification from Anki Dashboard'], 
+        result = subprocess.run(['/usr/local/bin/notify.sh', 'Test notification from Anki Dashboard'],
                                 capture_output=True, text=True, timeout=30)
-        return jsonify({'success': result.returncode == 0, 'message': 'Notification sent' if result.returncode == 0 else 'Failed to send'})
+        detail = (result.stdout or result.stderr or '').strip()
+        ok = result.returncode == 0
+        return jsonify({'success': ok, 'message': detail or ('Notification sent' if ok else 'Failed to send')})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -472,7 +474,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
                 <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-4">Features</div><div id="features" class="space-y-2"></div></div>
                 <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-4">Backups</div><div class="text-4xl font-bold text-slate-300" id="backups">--</div><div class="text-sm text-slate-500 mt-1" id="backups-size">--</div></div>
-                <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-4">Auth Stats</div><div class="space-y-1 mt-2"><div>Success: <span class="text-green-400 font-semibold" id="auth-ok">0</span></div><div>Failed: <span class="text-red-400 font-semibold" id="auth-fail">0</span></div></div><button onclick="testNotify()" class="mt-4 w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition text-white">Test Notification</button></div>
+                <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-4">Auth Stats</div><div class="space-y-1 mt-2"><div>Success: <span class="text-green-400 font-semibold" id="auth-ok">0</span></div><div>Failed: <span class="text-red-400 font-semibold" id="auth-fail">0</span></div></div><button id="notify-btn" onclick="testNotify()" class="mt-4 w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition text-white disabled:opacity-40 disabled:cursor-not-allowed">Test Notification</button></div>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-4">Sync Activity (7 Days)</div><canvas id="chart" height="180"></canvas></div>
@@ -596,6 +598,8 @@ async function refreshAll(){
     try{
         const r=await fetch('/api/features');const d=await r.json();
         document.getElementById('features').innerHTML=Object.entries(d).map(([k,v])=>`<div class="flex justify-between"><span>${k}</span><span class="px-2 py-0.5 rounded-full text-xs font-semibold ${v?'bg-green-500/20 text-green-400':'bg-slate-700 text-slate-500'}">${v?'ON':'OFF'}</span></div>`).join('');
+        const nb=document.getElementById('notify-btn');
+        if(nb){const on=d['Notifications']||d['Email'];nb.disabled=!on;nb.title=on?'':'Set NOTIFY_ENABLED or EMAIL_ENABLED first';}
     }catch(e){}
     
     try{
