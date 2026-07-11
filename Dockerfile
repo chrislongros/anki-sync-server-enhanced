@@ -42,7 +42,7 @@ RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --de
 # Install Python packages
 RUN pip3 install --break-system-packages --no-cache-dir flask boto3 waitress
 
-# Vendor dashboard JS so it works without internet access
+# Vendored dashboard JS, no CDN at runtime
 RUN mkdir -p /usr/local/share/anki-dashboard \
     && curl -fsSL -o /usr/local/share/anki-dashboard/chart.umd.js https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.js \
     && curl -fsSL -o /usr/local/share/anki-dashboard/tailwind.js https://cdn.tailwindcss.com/3.4.16

@@ -190,33 +190,27 @@ shutdown_handler() {
     log_info "Received shutdown signal, stopping gracefully..."
     send_notification "Server shutting down" "Anki Sync Server"
 
-    # Kill the sync server process
     if [ -n "$SYNC_PID" ]; then
         kill -TERM "$SYNC_PID" 2>/dev/null || true
         wait "$SYNC_PID" 2>/dev/null || true
     fi
 
-    # Kill Caddy if running
     if [ -n "$CADDY_PID" ]; then
         kill -TERM "$CADDY_PID" 2>/dev/null || true
     fi
 
-    # Kill metrics server if running
     if [ -n "$METRICS_PID" ]; then
         kill -TERM "$METRICS_PID" 2>/dev/null || true
     fi
 
-    # Kill dashboard if running
     if [ -n "$DASHBOARD_PID" ]; then
         kill -TERM "$DASHBOARD_PID" 2>/dev/null || true
     fi
 
-    # Kill sync output monitor if running
     if [ -n "$MONITOR_PID" ]; then
         kill -TERM "$MONITOR_PID" 2>/dev/null || true
     fi
 
-    # Stop cron if running
     if [ -f /var/run/crond.pid ]; then
         kill $(cat /var/run/crond.pid) 2>/dev/null || true
     fi
@@ -284,7 +278,7 @@ fi
 
 echo "$USER_COUNT" > /var/lib/anki/user_count.txt
 
-# Initialize metrics tracking files (keep counts across restarts)
+# Keep counters across restarts
 [ -f /var/lib/anki/sync_count.txt ] || echo "0" > /var/lib/anki/sync_count.txt
 [ -f /var/lib/anki/bytes_synced.txt ] || echo "0" > /var/lib/anki/bytes_synced.txt
 
@@ -297,9 +291,7 @@ setup_tls() {
     local CADDYFILE="/config/caddy/Caddyfile"
     mkdir -p /config/caddy
 
-    # Generate Caddyfile based on mode
     if [ -n "$TLS_DOMAIN" ]; then
-        # Let's Encrypt mode
         log_info "Using Let's Encrypt for $TLS_DOMAIN"
         log_info "Generating Caddyfile for Let's Encrypt (domain: $TLS_DOMAIN)"
         cat > "$CADDYFILE" << EOF
@@ -319,7 +311,6 @@ ${TLS_DOMAIN} {
 }
 EOF
     elif [ -n "$TLS_CERT" ] && [ -n "$TLS_KEY" ] && [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ]; then
-        # Manual certificate mode
         log_info "Using provided TLS certificates"
         log_info "Generating Caddyfile for manual certificates"
         cat > "$CADDYFILE" << EOF
@@ -340,7 +331,6 @@ https://:${TLS_PORT} {
 }
 EOF
     else
-        # Self-signed mode
         log_info "Using self-signed certificate (set TLS_DOMAIN for Let's Encrypt)"
         log_info "Generating Caddyfile for self-signed certificate"
         cat > "$CADDYFILE" << EOF
@@ -366,12 +356,10 @@ EOF
 
     log_debug "Caddyfile created at $CADDYFILE"
 
-    # Start Caddy
     log_info "Starting Caddy on port $TLS_PORT..."
     XDG_DATA_HOME=/config/caddy caddy run --config "$CADDYFILE" --adapter caddyfile &
     CADDY_PID=$!
 
-    # Wait a moment for Caddy to start
     sleep 2
 
     if kill -0 "$CADDY_PID" 2>/dev/null; then
@@ -405,7 +393,7 @@ from           ${EMAIL_FROM}
 user           ${EMAIL_USER}
 password       ${EMAIL_PASS}
 EOF
-    # group-readable: notify.sh/backup.sh run msmtp as the anki user
+    # anki-run msmtp needs to read this
     chgrp anki /etc/msmtprc
     chmod 640 /etc/msmtprc
 fi
@@ -445,11 +433,9 @@ fi
 if [ "$BACKUP_ENABLED" = "true" ]; then
     log_info "Setting up automated backups (schedule: $BACKUP_SCHEDULE)"
 
-    # Create cron job
     echo "$BACKUP_SCHEDULE /usr/local/bin/backup.sh >> /var/log/anki/backup.log 2>&1" > /etc/cron.d/anki-backup
     chmod 0644 /etc/cron.d/anki-backup
 
-    # Start cron daemon
     cron
 
     log_info "Backup cron started"
