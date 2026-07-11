@@ -118,17 +118,39 @@ def get_users():
         return users
     return []
 
+_card_cache = {}
+
 def get_collection_info(db_path):
-    """Get card count from Anki collection database"""
+    """Card count; the server holds synced collections locked, so fall back
+    to querying a temp copy and cache by mtime"""
     try:
-        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM cards")
-        cards = cursor.fetchone()[0]
-        conn.close()
+        mtime = os.path.getmtime(db_path)
+        cached = _card_cache.get(db_path)
+        if cached and cached[0] == mtime:
+            return {'cards': cached[1]}
+        cards = None
+        try:
+            conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=1)
+            cards = conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
+            conn.close()
+        except sqlite3.OperationalError:
+            if os.path.getsize(db_path) < 512 * 1024 * 1024:
+                import shutil
+                import tempfile
+                fd, tmp = tempfile.mkstemp(suffix='.anki2')
+                os.close(fd)
+                try:
+                    shutil.copyfile(db_path, tmp)
+                    conn = sqlite3.connect(f'file:{tmp}?mode=ro', uri=True)
+                    cards = conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
+                    conn.close()
+                finally:
+                    os.unlink(tmp)
+        if cards is not None:
+            _card_cache[db_path] = (mtime, cards)
         return {'cards': cards}
     except Exception:
-        return {'cards': 0}
+        return {'cards': None}
 
 def get_devices():
     """Distinct devices per user from DEVICE log lines, newest first"""
@@ -745,9 +767,17 @@ async function refreshAll(){
     }catch(e){}
 }
 
+let usersData=[];
 async function loadUsers(){
     try{
-        const r=await fetch('/api/users');const d=await r.json();
+        const r=await fetch('/api/users');usersData=await r.json();
+        renderUsers();
+    }catch(e){}
+}
+
+function renderUsers(){
+    try{
+        const d=usersData;
         const totalSize=d.reduce((a,b)=>a+b.total_size,0)||1;
         
         document.getElementById('user-storage-chart').innerHTML='<div class="text-xs text-slate-500 uppercase mb-3">Storage per User</div>'+d.map(u=>`<div class="mb-3"><div class="flex justify-between text-sm mb-1"><span class="text-cyan-400 font-medium">${u.username}</span><span>${u.total_size_formatted}</span></div><div class="h-2 ${darkMode?'bg-slate-600':'bg-gray-300'} rounded-full overflow-hidden"><div class="h-full bg-cyan-500 rounded-full" style="width:${(u.total_size/totalSize)*100}%"></div></div></div>`).join('');
@@ -773,7 +803,7 @@ async function loadUsers(){
                                     <span class="font-mono text-sm">${c.name}</span>
                                     <span class="text-cyan-400 font-semibold">${c.size_formatted}</span>
                                 </div>
-                                <div class="text-xs text-slate-500">${c.cards?c.cards.toLocaleString()+' cards':c.files+' files'}</div>
+                                <div class="text-xs text-slate-500">${c.type==='database'?(c.cards!=null?c.cards.toLocaleString()+' cards':'card count unavailable'):c.files+' files'}</div>
                                 <div class="text-xs text-slate-500">Modified: ${c.modified}</div>
                             </div>
                         `).join('')}
@@ -794,7 +824,7 @@ async function loadUsers(){
     }catch(e){}
 }
 
-function toggleUser(i){expandedUser=expandedUser===i?null:i;loadUsers();}
+function toggleUser(i){expandedUser=expandedUser===i?null:i;renderUsers();}
 
 async function loadBackups(){
     try{
@@ -895,8 +925,8 @@ async function loadSystem(){
         document.getElementById('container-info').innerHTML=`
             <div><div class="text-xs text-slate-500">Container ID</div><div class="text-sm font-mono">${d.container_id}</div></div>
             <div><div class="text-xs text-slate-500">Image</div><div class="text-sm">${d.image_name}</div></div>
-            <div><div class="text-xs text-slate-500">OS</div><div class="text-sm">${esc(d.os)}</div></div>
-            <div><div class="text-xs text-slate-500">Kernel</div><div class="text-sm">${esc(d.kernel)}</div></div>
+            <div><div class="text-xs text-slate-500">Container OS</div><div class="text-sm">${esc(d.os)}</div></div>
+            <div><div class="text-xs text-slate-500">Host Kernel</div><div class="text-sm">${esc(d.kernel)}</div></div>
             <div><div class="text-xs text-slate-500">Restarts</div><div class="text-lg font-semibold text-green-400">${d.restarts}</div></div>
         `;
     }catch(e){}
