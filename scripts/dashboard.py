@@ -319,7 +319,17 @@ def get_recent_syncs():
     for line in reversed(lines):
         if 'SYNC_COMPLETE' in line or ('SYNC' in line and 'COMPLETE' in line):
             m = re.search(r'uid="([^"]*)"', line)
-            syncs.append({'time': line[1:20], 'user': m.group(1) if m else 'unknown'})
+            user = m.group(1) if m else 'unknown'
+            try:
+                epoch = time.mktime(datetime.strptime(line[1:20], '%Y-%m-%d %H:%M:%S').timetuple())
+            except Exception:
+                epoch = None
+            # collapse bursts: same user within a minute becomes one row
+            if (syncs and syncs[-1]['user'] == user and epoch and syncs[-1]['epoch']
+                    and syncs[-1]['epoch'] - epoch < 60):
+                syncs[-1]['count'] += 1
+                continue
+            syncs.append({'time': line[1:20], 'epoch': epoch, 'user': user, 'count': 1})
             if len(syncs) >= 10:
                 break
     return syncs
@@ -574,9 +584,10 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 <script>
 let logType='sync',chart,cd=10,darkMode=true,expandedUser=null;
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function rel(epoch){const d=Date.now()/1000-epoch;if(d<60)return Math.max(0,Math.floor(d))+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago';}
 const storageColors={collections:'#06b6d4',media:'#3b82f6',backups:'#a855f7',logs:'#64748b'};
 
-document.addEventListener('DOMContentLoaded',()=>{initChart();refreshAll();setInterval(()=>{if(document.hidden)return;cd--;document.getElementById('cd').textContent=cd;if(cd<=0){cd=10;refreshAll();}},1000);});
+document.addEventListener('DOMContentLoaded',()=>{initChart();if(localStorage.getItem('theme')==='light')toggleTheme();refreshAll();setInterval(()=>{if(document.hidden)return;cd--;document.getElementById('cd').textContent=cd;if(cd<=0){cd=10;refreshAll();}},1000);});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){cd=10;refreshAll();}});
 
 function toggleTheme(){
@@ -595,6 +606,7 @@ function toggleTheme(){
         document.querySelectorAll('.tab-btn:not(.bg-blue-600)').forEach(b=>{b.classList.remove('bg-slate-800','text-slate-400');b.classList.add('bg-gray-200','text-gray-600');});
     }
     applyChartTheme();
+    localStorage.setItem('theme',darkMode?'dark':'light');
 }
 
 function showTab(t){
@@ -669,7 +681,7 @@ async function refreshAll(){
     
     try{
         const r=await fetch('/api/syncs');const d=await r.json();
-        document.getElementById('recent').innerHTML=d.length?d.map(s=>`<div class="flex justify-between p-2 ${darkMode?'bg-slate-700/50':'bg-gray-100'} rounded"><span class="text-cyan-400">${esc(s.user)}</span><span class="text-slate-500 text-sm">${s.time}</span></div>`).join(''):'<div class="text-slate-500">No recent activity</div>';
+        document.getElementById('recent').innerHTML=d.length?d.map(s=>`<div class="flex justify-between p-2 ${darkMode?'bg-slate-700/50':'bg-gray-100'} rounded"><span class="text-cyan-400">${esc(s.user)}${s.count>1?` <span class="text-slate-500 text-xs">×${s.count}</span>`:''}</span><span class="text-slate-500 text-sm" title="${s.time}">${s.epoch?rel(s.epoch):s.time}</span></div>`).join(''):'<div class="text-slate-500">No recent activity</div>';
     }catch(e){}
 
     try{
