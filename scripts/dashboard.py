@@ -130,9 +130,39 @@ def get_collection_info(db_path):
     except Exception:
         return {'cards': 0}
 
+def get_devices():
+    """Distinct devices per user from DEVICE log lines, newest first"""
+    lines = read_log_lines(os.path.join(LOG_DIR, 'devices.log'), 2000)
+    seen = {}
+    for line in lines:
+        m = re.search(r'uid="([^"]*)" client="([^"]*)"', line)
+        if m:
+            seen[(m.group(1), m.group(2))] = line[1:20]
+    result = {}
+    for (user, client), last in seen.items():
+        parts = client.split(',')
+        result.setdefault(user, []).append({
+            'version': parts[0] if parts else client,
+            'platform': parts[-1] if len(parts) > 1 else 'unknown',
+            'last_seen': last,
+        })
+    for devs in result.values():
+        devs.sort(key=lambda d: d['last_seen'], reverse=True)
+    return result
+
+def get_latency_stats():
+    lines = read_log_lines(os.path.join(LOG_DIR, 'latency.log'), 2000)
+    vals = [int(m.group(1)) for m in (re.search(r'ms=(\d+)', l) for l in lines) if m]
+    if not vals:
+        return {'count': 0, 'avg': 0, 'p95': 0, 'max': 0}
+    vals.sort()
+    return {'count': len(vals), 'avg': round(sum(vals) / len(vals), 1),
+            'p95': vals[min(len(vals) - 1, int(len(vals) * 0.95))], 'max': vals[-1]}
+
 def get_user_details():
     """Get detailed user statistics including collection info"""
     users = get_users()
+    all_devices = get_devices()
     details = []
     for user in users:
         user_dir = os.path.join(DATA_DIR, user)
@@ -188,7 +218,8 @@ def get_user_details():
             'total_size': total_size,
             'total_size_formatted': format_bytes(total_size),
             'last_sync': last_sync,
-            'collections': collections
+            'collections': collections,
+            'devices': all_devices.get(user, [])
         })
     
     return details
@@ -228,8 +259,24 @@ def get_container_info():
     info = {
         'container_id': 'N/A',
         'image_name': 'anki-sync-server',
-        'restarts': 0
+        'restarts': 0,
+        'os': 'unknown',
+        'kernel': 'unknown'
     }
+
+    try:
+        with open('/etc/os-release') as f:
+            for line in f:
+                if line.startswith('PRETTY_NAME='):
+                    info['os'] = line.split('=', 1)[1].strip().strip('"')
+                    break
+    except Exception:
+        pass
+    try:
+        u = os.uname()
+        info['kernel'] = f"{u.sysname} {u.release} ({u.machine})"
+    except Exception:
+        pass
     
     try:
         with open('/proc/self/cgroup', 'r') as f:
@@ -451,6 +498,11 @@ def api_logs(log_type):
 def api_chart():
     return jsonify(get_sync_chart_data())
 
+@app.route('/api/latency')
+@requires_auth
+def api_latency():
+    return jsonify(get_latency_stats())
+
 @app.route('/api/system')
 @requires_auth
 def api_system():
@@ -508,7 +560,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Server Status</div><div class="flex items-center gap-2 mb-1"><span class="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></span><span class="text-lg text-green-400">Online</span></div><div class="text-sm text-slate-500">Version: <span id="version">--</span></div><div class="text-sm text-slate-500">Uptime: <span id="uptime">--</span></div></div>
                 <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Users</div><div class="text-4xl font-bold text-green-400" id="users">--</div><div class="text-sm text-slate-500 mt-1">Active users</div></div>
                 <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Data Size</div><div class="text-4xl font-bold text-cyan-400" id="datasize">--</div><div class="text-sm text-slate-500 mt-1">Total sync data</div></div>
-                <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Sync Operations</div><div class="text-4xl font-bold text-orange-400" id="syncs">--</div><div class="text-sm text-slate-500 mt-1">Since restart</div></div>
+                <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Sync Operations</div><div class="text-4xl font-bold text-orange-400" id="syncs">--</div><div class="text-sm text-slate-500 mt-1">Total completed</div><div class="text-sm text-slate-500" id="latency">--</div></div>
             </div>
             
             <div class="card bg-slate-800 rounded-xl p-5 mb-6">
@@ -625,7 +677,7 @@ function chartTheme(){return darkMode?{grid:'rgba(255,255,255,0.05)',ticks:'#647
 function initChart(){
     const ctx=document.getElementById('chart').getContext('2d');
     const t=chartTheme();
-    chart=new Chart(ctx,{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:'rgba(6,182,212,0.5)',borderColor:'rgb(6,182,212)',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:t.grid},ticks:{color:t.ticks}},x:{grid:{display:false},ticks:{color:t.ticks}}}}});
+    chart=new Chart(ctx,{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:'rgba(6,182,212,0.5)',borderColor:'rgb(6,182,212)',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:t.grid},ticks:{color:t.ticks,precision:0}},x:{grid:{display:false},ticks:{color:t.ticks}}}}});
 }
 
 function applyChartTheme(){
@@ -686,6 +738,11 @@ async function refreshAll(){
         if(d.update_available){b.textContent='Anki '+d.latest+' available';b.classList.remove('hidden');}
         else b.classList.add('hidden');
     }catch(e){}
+
+    try{
+        const r=await fetch('/api/latency');const d=await r.json();
+        document.getElementById('latency').textContent=d.count?`avg ${d.avg} ms · p95 ${d.p95} ms`:'no data yet';
+    }catch(e){}
 }
 
 async function loadUsers(){
@@ -721,6 +778,16 @@ async function loadUsers(){
                             </div>
                         `).join('')}
                     </div>
+                    ${u.devices&&u.devices.length?`
+                    <div class="text-xs text-slate-500 uppercase mt-4 mb-2">Devices</div>
+                    <div class="space-y-1.5">
+                        ${u.devices.map(dv=>`
+                            <div class="flex justify-between items-center text-sm ${darkMode?'bg-slate-800':'bg-white'} rounded-lg px-3 py-2">
+                                <span>${/android|ios|iphone|ipad/i.test(dv.platform)?'📱':'💻'} ${esc(dv.platform)} · Anki ${esc(dv.version)}</span>
+                                <span class="text-slate-500 text-xs">last seen ${dv.last_seen}</span>
+                            </div>
+                        `).join('')}
+                    </div>`:''}
                 </div>
             </div>
         `).join('');
@@ -828,6 +895,8 @@ async function loadSystem(){
         document.getElementById('container-info').innerHTML=`
             <div><div class="text-xs text-slate-500">Container ID</div><div class="text-sm font-mono">${d.container_id}</div></div>
             <div><div class="text-xs text-slate-500">Image</div><div class="text-sm">${d.image_name}</div></div>
+            <div><div class="text-xs text-slate-500">OS</div><div class="text-sm">${esc(d.os)}</div></div>
+            <div><div class="text-xs text-slate-500">Kernel</div><div class="text-sm">${esc(d.kernel)}</div></div>
             <div><div class="text-xs text-slate-500">Restarts</div><div class="text-lg font-semibold text-green-400">${d.restarts}</div></div>
         `;
     }catch(e){}
