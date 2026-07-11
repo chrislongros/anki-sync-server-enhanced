@@ -54,7 +54,7 @@ def requires_auth(f):
 _dir_size_cache = {}
 
 def get_dir_size(path, ttl=60):
-    # The 10s dashboard poll must not rescan gigabytes of media every time
+    # the 10s poll shouldn't rescan all media every time
     now = time.time()
     cached = _dir_size_cache.get(path)
     if cached and now - cached[0] < ttl:
@@ -142,7 +142,6 @@ def get_user_details():
         total_size = get_dir_size(user_dir)
         collections = []
         
-        # Find collection database
         for db_file in Path(user_dir).glob('**/*.anki2'):
             size = db_file.stat().st_size
             info = get_collection_info(str(db_file))
@@ -159,7 +158,6 @@ def get_user_details():
                 'type': 'database'
             })
         
-        # Find media folder
         media_dir = os.path.join(user_dir, 'collection.media')
         if os.path.exists(media_dir):
             media_size = get_dir_size(media_dir)
@@ -233,7 +231,6 @@ def get_container_info():
         'restarts': 0
     }
     
-    # Try to get container ID
     try:
         with open('/proc/self/cgroup', 'r') as f:
             for line in f:
@@ -247,7 +244,6 @@ def get_container_info():
     except Exception:
         pass
     
-    # Fallback to hostname
     if info['container_id'] == 'N/A':
         try:
             info['container_id'] = os.environ.get('HOSTNAME', 'unknown')[:12]

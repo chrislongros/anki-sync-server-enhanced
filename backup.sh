@@ -148,8 +148,7 @@ mkdir -p "$BACKUP_DIR"
 DATA_SIZE=$(du -sh "$DATA_DIR" 2>/dev/null | cut -f1 || echo "unknown")
 log "Data directory size: $DATA_SIZE"
 
-# Snapshot SQLite DBs via .backup so a mid-backup sync can't corrupt the
-# archive; stage under BACKUP_DIR, not /tmp (may be a small tmpfs)
+# Stage a SQLite-safe snapshot; BACKUP_DIR because /tmp may be a small tmpfs
 STAGING=$(mktemp -d "${BACKUP_DIR}/.staging.XXXXXX")
 trap 'rm -rf "$STAGING"' EXIT
 
@@ -159,7 +158,7 @@ find . -type f ! -name '*.anki2*' ! -name '*.db' ! -name '*-wal' ! -name '*-shm'
     -exec cp -a {} "$STAGING/{}" \;
 find . -type f \( -name '*.anki2' -o -name '*.db' \) -print0 | while IFS= read -r -d '' db; do
     if ! sqlite3 -cmd '.timeout 10000' "$db" ".backup '$STAGING/$db'" 2>/dev/null; then
-        # DB locked by the server (e.g. media.db): fall back to raw copy
+        # locked by the server (e.g. media.db): raw copy instead
         cp -a "$db" "$STAGING/$db"
         for sib in "$db-wal" "$db-shm"; do
             [ -f "$sib" ] && cp -a "$sib" "$STAGING/$sib" || true
