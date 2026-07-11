@@ -54,6 +54,8 @@ def collection_stats(db_path):
     import tempfile
 
     def query(conn):
+        # anki schemas use a custom collation vanilla sqlite doesn't have
+        conn.create_collation('unicase', lambda a, b: (a > b) - (a < b))
         stats = {}
         stats['cards'] = conn.execute('SELECT COUNT(*) FROM cards').fetchone()[0]
         stats['notes'] = conn.execute('SELECT COUNT(*) FROM notes').fetchone()[0]
