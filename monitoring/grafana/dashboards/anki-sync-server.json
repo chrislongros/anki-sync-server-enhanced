@@ -66,15 +66,12 @@
       "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
     },
     {
-      "id": 9, "type": "timeseries", "title": "Login attempts per hour",
+      "id": 9, "type": "timeseries", "title": "Total syncs over time",
       "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [
-        { "expr": "increase(anki_sync_auth_success_total[1h])", "legendFormat": "success", "refId": "A" },
-        { "expr": "increase(anki_sync_auth_failed_total[1h])", "legendFormat": "failed", "refId": "B" }
-      ],
-      "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }, "min": 0, "decimals": 0 }, "overrides": [ { "matcher": { "id": "byName", "options": "failed" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } } ] } ] },
-      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+      "targets": [{ "expr": "anki_sync_operations_total", "legendFormat": "syncs", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }, "min": 0, "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } }
     },
     {
       "id": 10, "type": "bargauge", "title": "Data per user",
