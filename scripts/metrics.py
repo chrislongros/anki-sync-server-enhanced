@@ -43,6 +43,54 @@ def dir_size(path, ttl=60):
     return total
 
 
+_col_cache = {}
+
+
+def collection_stats(db_path):
+    """Cards/notes/decks/reviews; the server holds synced collections locked,
+    so query a temp copy and cache by mtime"""
+    import shutil
+    import sqlite3
+    import tempfile
+
+    def query(conn):
+        stats = {}
+        stats['cards'] = conn.execute('SELECT COUNT(*) FROM cards').fetchone()[0]
+        stats['notes'] = conn.execute('SELECT COUNT(*) FROM notes').fetchone()[0]
+        for key, table in (('decks', 'decks'), ('reviews', 'revlog')):
+            try:
+                stats[key] = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
+            except sqlite3.Error:
+                stats[key] = 0
+        return stats
+
+    try:
+        mtime = os.path.getmtime(db_path)
+        cached = _col_cache.get(db_path)
+        if cached and cached[0] == mtime:
+            return cached[1]
+        try:
+            conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=1)
+            stats = query(conn)
+            conn.close()
+        except sqlite3.OperationalError:
+            if os.path.getsize(db_path) >= 512 * 1024 * 1024:
+                return None
+            fd, tmp = tempfile.mkstemp(suffix='.anki2')
+            os.close(fd)
+            try:
+                shutil.copyfile(db_path, tmp)
+                conn = sqlite3.connect(f'file:{tmp}?mode=ro', uri=True)
+                stats = query(conn)
+                conn.close()
+            finally:
+                os.unlink(tmp)
+        _col_cache[db_path] = (mtime, stats)
+        return stats
+    except Exception:
+        return None
+
+
 def tail(path, n=2000):
     try:
         out = subprocess.run(['tail', '-n', str(n), path],
@@ -91,6 +139,40 @@ def build_metrics():
     metric('anki_sync_user_data_bytes', 'Per-user data size in bytes', 'gauge',
            [f'anki_sync_user_data_bytes{{user="{label(u)}"}} {dir_size(os.path.join(DATA_DIR, u))}'
             for u in users])
+
+    col_bytes = {}
+    media_bytes = {}
+    media_files = {}
+    col_stats = {}
+    for u in users:
+        udir = Path(DATA_DIR) / u
+        col_bytes[u] = sum(f.stat().st_size for f in udir.glob('*.anki2') if f.is_file())
+        mdir = udir / 'collection.media'
+        media_bytes[u] = dir_size(str(mdir)) if mdir.is_dir() else 0
+        try:
+            media_files[u] = sum(1 for f in mdir.iterdir() if f.is_file()) if mdir.is_dir() else 0
+        except OSError:
+            media_files[u] = 0
+        col = udir / 'collection.anki2'
+        if col.is_file():
+            stats = collection_stats(str(col))
+            if stats:
+                col_stats[u] = stats
+
+    metric('anki_sync_collections_bytes', 'Total collection database size', 'gauge',
+           [f'anki_sync_collections_bytes {sum(col_bytes.values())}'])
+    metric('anki_sync_media_bytes', 'Total media size', 'gauge',
+           [f'anki_sync_media_bytes {sum(media_bytes.values())}'])
+    metric('anki_sync_user_collection_bytes', 'Per-user collection database size', 'gauge',
+           [f'anki_sync_user_collection_bytes{{user="{label(u)}"}} {v}' for u, v in col_bytes.items()])
+    metric('anki_sync_user_media_bytes', 'Per-user media size', 'gauge',
+           [f'anki_sync_user_media_bytes{{user="{label(u)}"}} {v}' for u, v in media_bytes.items()])
+    metric('anki_sync_media_files_total', 'Per-user media file count', 'gauge',
+           [f'anki_sync_media_files_total{{user="{label(u)}"}} {v}' for u, v in media_files.items()])
+    for key, help_text in (('cards', 'Cards in collection'), ('notes', 'Notes in collection'),
+                           ('decks', 'Decks in collection'), ('reviews', 'Reviews logged')):
+        metric(f'anki_sync_{key}_total', help_text, 'gauge',
+               [f'anki_sync_{key}_total{{user="{label(u)}"}} {s[key]}' for u, s in col_stats.items()])
 
     backups = []
     if os.path.isdir(BACKUP_DIR):

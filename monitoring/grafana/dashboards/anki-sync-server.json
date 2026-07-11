@@ -91,6 +91,30 @@
       "targets": [{ "expr": "anki_sync_devices_total", "legendFormat": "{{user}}", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "blue" }, "min": 0, "decimals": 0 }, "overrides": [] },
       "options": { "orientation": "horizontal", "displayMode": "basic", "showUnfilled": true }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Storage over time",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "anki_sync_collections_bytes", "legendFormat": "collections", "refId": "A" },
+        { "expr": "anki_sync_media_bytes", "legendFormat": "media", "refId": "B" },
+        { "expr": "anki_sync_backup_bytes", "legendFormat": "backups", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }, "min": 0 }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "Cards / notes / reviews over time",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "anki_sync_cards_total", "legendFormat": "cards {{user}}", "refId": "A" },
+        { "expr": "anki_sync_notes_total", "legendFormat": "notes {{user}}", "refId": "B" },
+        { "expr": "anki_sync_reviews_total", "legendFormat": "reviews {{user}}", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0 }, "min": 0, "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
     }
   ]
 }
