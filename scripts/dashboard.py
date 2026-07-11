@@ -118,21 +118,73 @@ def get_users():
         return users
     return []
 
+_card_cache = {}
+
 def get_collection_info(db_path):
-    """Get card count from Anki collection database"""
+    """Card count; the server holds synced collections locked, so fall back
+    to querying a temp copy and cache by mtime"""
     try:
-        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM cards")
-        cards = cursor.fetchone()[0]
-        conn.close()
+        mtime = os.path.getmtime(db_path)
+        cached = _card_cache.get(db_path)
+        if cached and cached[0] == mtime:
+            return {'cards': cached[1]}
+        cards = None
+        try:
+            conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=1)
+            cards = conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
+            conn.close()
+        except sqlite3.OperationalError:
+            if os.path.getsize(db_path) < 512 * 1024 * 1024:
+                import shutil
+                import tempfile
+                fd, tmp = tempfile.mkstemp(suffix='.anki2')
+                os.close(fd)
+                try:
+                    shutil.copyfile(db_path, tmp)
+                    conn = sqlite3.connect(f'file:{tmp}?mode=ro', uri=True)
+                    cards = conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
+                    conn.close()
+                finally:
+                    os.unlink(tmp)
+        if cards is not None:
+            _card_cache[db_path] = (mtime, cards)
         return {'cards': cards}
     except Exception:
-        return {'cards': 0}
+        return {'cards': None}
+
+def get_devices():
+    """Distinct devices per user from DEVICE log lines, newest first"""
+    lines = read_log_lines(os.path.join(LOG_DIR, 'devices.log'), 2000)
+    seen = {}
+    for line in lines:
+        m = re.search(r'uid="([^"]*)" client="([^"]*)"', line)
+        if m:
+            seen[(m.group(1), m.group(2))] = line[1:20]
+    result = {}
+    for (user, client), last in seen.items():
+        parts = client.split(',')
+        result.setdefault(user, []).append({
+            'version': parts[0] if parts else client,
+            'platform': parts[-1] if len(parts) > 1 else 'unknown',
+            'last_seen': last,
+        })
+    for devs in result.values():
+        devs.sort(key=lambda d: d['last_seen'], reverse=True)
+    return result
+
+def get_latency_stats():
+    lines = read_log_lines(os.path.join(LOG_DIR, 'latency.log'), 2000)
+    vals = [int(m.group(1)) for m in (re.search(r'ms=(\d+)', l) for l in lines) if m]
+    if not vals:
+        return {'count': 0, 'avg': 0, 'p95': 0, 'max': 0}
+    vals.sort()
+    return {'count': len(vals), 'avg': round(sum(vals) / len(vals), 1),
+            'p95': vals[min(len(vals) - 1, int(len(vals) * 0.95))], 'max': vals[-1]}
 
 def get_user_details():
     """Get detailed user statistics including collection info"""
     users = get_users()
+    all_devices = get_devices()
     details = []
     for user in users:
         user_dir = os.path.join(DATA_DIR, user)
@@ -188,7 +240,8 @@ def get_user_details():
             'total_size': total_size,
             'total_size_formatted': format_bytes(total_size),
             'last_sync': last_sync,
-            'collections': collections
+            'collections': collections,
+            'devices': all_devices.get(user, [])
         })
     
     return details
@@ -228,8 +281,24 @@ def get_container_info():
     info = {
         'container_id': 'N/A',
         'image_name': 'anki-sync-server',
-        'restarts': 0
+        'restarts': 0,
+        'os': 'unknown',
+        'kernel': 'unknown'
     }
+
+    try:
+        with open('/etc/os-release') as f:
+            for line in f:
+                if line.startswith('PRETTY_NAME='):
+                    info['os'] = line.split('=', 1)[1].strip().strip('"')
+                    break
+    except Exception:
+        pass
+    try:
+        u = os.uname()
+        info['kernel'] = f"{u.sysname} {u.release} ({u.machine})"
+    except Exception:
+        pass
     
     try:
         with open('/proc/self/cgroup', 'r') as f:
@@ -255,10 +324,13 @@ def get_container_info():
 def get_backups():
     backups = []
     if os.path.exists(BACKUP_DIR):
-        for f in sorted(Path(BACKUP_DIR).glob('*.tar.gz'), reverse=True)[:20]:
+        files = sorted(Path(BACKUP_DIR).glob('*.tar.gz'),
+                       key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in files[:20]:
             stat = f.stat()
             backups.append({
                 'name': f.name,
+                'kind': 'safety' if f.name.startswith('pre_restore_') else 'scheduled',
                 'size': stat.st_size,
                 'size_formatted': format_bytes(stat.st_size),
                 'created': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
@@ -312,7 +384,17 @@ def get_recent_syncs():
     for line in reversed(lines):
         if 'SYNC_COMPLETE' in line or ('SYNC' in line and 'COMPLETE' in line):
             m = re.search(r'uid="([^"]*)"', line)
-            syncs.append({'time': line[1:20], 'user': m.group(1) if m else 'unknown'})
+            user = m.group(1) if m else 'unknown'
+            try:
+                epoch = time.mktime(datetime.strptime(line[1:20], '%Y-%m-%d %H:%M:%S').timetuple())
+            except Exception:
+                epoch = None
+            # collapse bursts: same user within a minute becomes one row
+            if (syncs and syncs[-1]['user'] == user and epoch and syncs[-1]['epoch']
+                    and syncs[-1]['epoch'] - epoch < 60):
+                syncs[-1]['count'] += 1
+                continue
+            syncs.append({'time': line[1:20], 'epoch': epoch, 'user': user, 'count': 1})
             if len(syncs) >= 10:
                 break
     return syncs
@@ -375,6 +457,40 @@ def api_download_backup(filename):
     except FileNotFoundError:
         return jsonify({'error': 'File not found'}), 404
 
+@app.route('/api/backups/delete/<filename>', methods=['POST'])
+@requires_auth
+def api_delete_backup(filename):
+    if filename != os.path.basename(filename) or not filename.endswith('.tar.gz'):
+        return jsonify({'error': 'Invalid filename'}), 400
+    filepath = os.path.join(BACKUP_DIR, filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'File not found'}), 404
+    os.remove(filepath)
+    return jsonify({'success': True})
+
+_update_cache = {'ts': 0.0, 'latest': ''}
+
+@app.route('/api/update')
+@requires_auth
+def api_update():
+    import json as _json
+    from urllib.request import urlopen, Request
+    now = time.time()
+    if now - _update_cache['ts'] > 21600:
+        latest = ''
+        try:
+            req = Request('https://api.github.com/repos/ankitects/anki/releases/latest',
+                          headers={'User-Agent': 'anki-sync-dashboard'})
+            with urlopen(req, timeout=5) as r:
+                latest = _json.load(r).get('tag_name', '')
+        except Exception:
+            pass
+        _update_cache.update(ts=now, latest=latest)
+    current = read_file_safe(os.path.join(STATE_DIR, 'version.txt'), '')
+    latest = _update_cache['latest']
+    return jsonify({'current': current, 'latest': latest,
+                    'update_available': bool(latest) and bool(current) and latest != current})
+
 @app.route('/static/<filename>')
 def static_assets(filename):
     return send_from_directory(STATIC_DIR, filename)
@@ -403,6 +519,11 @@ def api_logs(log_type):
 @requires_auth
 def api_chart():
     return jsonify(get_sync_chart_data())
+
+@app.route('/api/latency')
+@requires_auth
+def api_latency():
+    return jsonify(get_latency_stats())
 
 @app.route('/api/system')
 @requires_auth
@@ -440,7 +561,10 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 <body class="min-h-screen p-6 bg-slate-900 text-slate-200" id="body">
     <div class="max-w-6xl mx-auto">
         <div class="flex justify-between items-center mb-8">
-            <h1 class="text-3xl font-light"><span class="text-white">Anki</span> <span class="text-cyan-400">Sync Server</span></h1>
+            <div class="flex items-center gap-3">
+                <h1 class="text-3xl font-light"><span class="text-white">Anki</span> <span class="text-cyan-400">Sync Server</span></h1>
+                <a id="update-badge" class="hidden px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-400 hover:bg-amber-500/30" href="https://github.com/ankitects/anki/releases/latest" target="_blank" rel="noopener"></a>
+            </div>
             <button onclick="toggleTheme()" id="theme-btn" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition">☀️</button>
         </div>
         
@@ -458,7 +582,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Server Status</div><div class="flex items-center gap-2 mb-1"><span class="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></span><span class="text-lg text-green-400">Online</span></div><div class="text-sm text-slate-500">Version: <span id="version">--</span></div><div class="text-sm text-slate-500">Uptime: <span id="uptime">--</span></div></div>
                 <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Users</div><div class="text-4xl font-bold text-green-400" id="users">--</div><div class="text-sm text-slate-500 mt-1">Active users</div></div>
                 <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Data Size</div><div class="text-4xl font-bold text-cyan-400" id="datasize">--</div><div class="text-sm text-slate-500 mt-1">Total sync data</div></div>
-                <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Sync Operations</div><div class="text-4xl font-bold text-orange-400" id="syncs">--</div><div class="text-sm text-slate-500 mt-1">Since restart</div></div>
+                <div class="card bg-slate-800 rounded-xl p-5"><div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Sync Operations</div><div class="text-4xl font-bold text-orange-400" id="syncs">--</div><div class="text-sm text-slate-500 mt-1">Total completed</div><div class="text-sm text-slate-500" id="latency">--</div></div>
             </div>
             
             <div class="card bg-slate-800 rounded-xl p-5 mb-6">
@@ -499,9 +623,13 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         <!-- Logs -->
         <div id="tab-logs" class="tab-content hidden">
             <div class="card bg-slate-800 rounded-xl p-5">
-                <div class="flex justify-between mb-4">
+                <div class="flex justify-between mb-4 flex-wrap gap-2">
                     <div class="flex gap-2"><button onclick="loadLogs('sync')" class="logbtn px-4 py-1.5 bg-blue-600 rounded-lg text-sm text-white">Sync</button><button onclick="loadLogs('auth')" class="logbtn px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 text-slate-300">Auth</button><button onclick="loadLogs('backup')" class="logbtn px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 text-slate-300">Backup</button><button onclick="loadLogs('server')" class="logbtn px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 text-slate-300">Server</button></div>
-                    <button onclick="refreshLogs()" class="px-4 py-1.5 bg-blue-600 rounded-lg text-sm hover:bg-blue-700 text-white">Refresh</button>
+                    <div class="flex gap-2 items-center">
+                        <input id="logfilter" oninput="renderLogs()" placeholder="filter…" class="px-3 py-1.5 rounded-lg bg-slate-700 text-sm text-slate-200 w-40 placeholder-slate-500">
+                        <label class="text-sm text-slate-400 flex items-center gap-1.5"><input type="checkbox" id="logfollow" checked> follow</label>
+                        <button onclick="refreshLogs()" class="px-4 py-1.5 bg-blue-600 rounded-lg text-sm hover:bg-blue-700 text-white">Refresh</button>
+                    </div>
                 </div>
                 <div id="logview" class="bg-slate-900 rounded-lg p-4 font-mono text-xs max-h-96 overflow-auto"></div>
             </div>
@@ -526,9 +654,11 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 <script>
 let logType='sync',chart,cd=10,darkMode=true,expandedUser=null;
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function rel(epoch){const d=Date.now()/1000-epoch;if(d<60)return Math.max(0,Math.floor(d))+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';if(d<86400)return Math.floor(d/3600)+'h ago';return Math.floor(d/86400)+'d ago';}
 const storageColors={collections:'#06b6d4',media:'#3b82f6',backups:'#a855f7',logs:'#64748b'};
 
-document.addEventListener('DOMContentLoaded',()=>{initChart();refreshAll();setInterval(()=>{cd--;document.getElementById('cd').textContent=cd;if(cd<=0){cd=10;refreshAll();}},1000);});
+document.addEventListener('DOMContentLoaded',()=>{initChart();if(localStorage.getItem('theme')==='light')toggleTheme();refreshAll();setInterval(()=>{if(document.hidden)return;cd--;document.getElementById('cd').textContent=cd;if(cd<=0){cd=10;refreshAll();}},1000);});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){cd=10;refreshAll();}});
 
 function toggleTheme(){
     darkMode=!darkMode;
@@ -545,6 +675,8 @@ function toggleTheme(){
         document.querySelectorAll('.card').forEach(c=>c.classList.replace('bg-slate-800','bg-white'));
         document.querySelectorAll('.tab-btn:not(.bg-blue-600)').forEach(b=>{b.classList.remove('bg-slate-800','text-slate-400');b.classList.add('bg-gray-200','text-gray-600');});
     }
+    applyChartTheme();
+    localStorage.setItem('theme',darkMode?'dark':'light');
 }
 
 function showTab(t){
@@ -562,9 +694,21 @@ function showTab(t){
     if(t==='system')loadSystem();
 }
 
+function chartTheme(){return darkMode?{grid:'rgba(255,255,255,0.05)',ticks:'#64748b'}:{grid:'rgba(0,0,0,0.07)',ticks:'#6b7280'};}
+
 function initChart(){
     const ctx=document.getElementById('chart').getContext('2d');
-    chart=new Chart(ctx,{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:'rgba(6,182,212,0.5)',borderColor:'rgb(6,182,212)',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#64748b'}},x:{grid:{display:false},ticks:{color:'#64748b'}}}}});
+    const t=chartTheme();
+    chart=new Chart(ctx,{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:'rgba(6,182,212,0.5)',borderColor:'rgb(6,182,212)',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:t.grid},ticks:{color:t.ticks,precision:0}},x:{grid:{display:false},ticks:{color:t.ticks}}}}});
+}
+
+function applyChartTheme(){
+    if(!chart)return;
+    const t=chartTheme();
+    chart.options.scales.y.grid.color=t.grid;
+    chart.options.scales.y.ticks.color=t.ticks;
+    chart.options.scales.x.ticks.color=t.ticks;
+    chart.update();
 }
 
 async function refreshAll(){
@@ -607,13 +751,33 @@ async function refreshAll(){
     
     try{
         const r=await fetch('/api/syncs');const d=await r.json();
-        document.getElementById('recent').innerHTML=d.length?d.map(s=>`<div class="flex justify-between p-2 ${darkMode?'bg-slate-700/50':'bg-gray-100'} rounded"><span class="text-cyan-400">${s.user}</span><span class="text-slate-500 text-sm">${s.time}</span></div>`).join(''):'<div class="text-slate-500">No recent activity</div>';
+        document.getElementById('recent').innerHTML=d.length?d.map(s=>`<div class="flex justify-between p-2 ${darkMode?'bg-slate-700/50':'bg-gray-100'} rounded"><span class="text-cyan-400">${esc(s.user)}${s.count>1?` <span class="text-slate-500 text-xs">×${s.count}</span>`:''}</span><span class="text-slate-500 text-sm" title="${s.time}">${s.epoch?rel(s.epoch):s.time}</span></div>`).join(''):'<div class="text-slate-500">No recent activity</div>';
+    }catch(e){}
+
+    try{
+        const r=await fetch('/api/update');const d=await r.json();
+        const b=document.getElementById('update-badge');
+        if(d.update_available){b.textContent='Anki '+d.latest+' available';b.classList.remove('hidden');}
+        else b.classList.add('hidden');
+    }catch(e){}
+
+    try{
+        const r=await fetch('/api/latency');const d=await r.json();
+        document.getElementById('latency').textContent=d.count?`avg ${d.avg} ms · p95 ${d.p95} ms`:'no data yet';
     }catch(e){}
 }
 
+let usersData=[];
 async function loadUsers(){
     try{
-        const r=await fetch('/api/users');const d=await r.json();
+        const r=await fetch('/api/users');usersData=await r.json();
+        renderUsers();
+    }catch(e){}
+}
+
+function renderUsers(){
+    try{
+        const d=usersData;
         const totalSize=d.reduce((a,b)=>a+b.total_size,0)||1;
         
         document.getElementById('user-storage-chart').innerHTML='<div class="text-xs text-slate-500 uppercase mb-3">Storage per User</div>'+d.map(u=>`<div class="mb-3"><div class="flex justify-between text-sm mb-1"><span class="text-cyan-400 font-medium">${u.username}</span><span>${u.total_size_formatted}</span></div><div class="h-2 ${darkMode?'bg-slate-600':'bg-gray-300'} rounded-full overflow-hidden"><div class="h-full bg-cyan-500 rounded-full" style="width:${(u.total_size/totalSize)*100}%"></div></div></div>`).join('');
@@ -639,31 +803,50 @@ async function loadUsers(){
                                     <span class="font-mono text-sm">${c.name}</span>
                                     <span class="text-cyan-400 font-semibold">${c.size_formatted}</span>
                                 </div>
-                                <div class="text-xs text-slate-500">${c.cards?c.cards.toLocaleString()+' cards':c.files+' files'}</div>
+                                <div class="text-xs text-slate-500">${c.type==='database'?(c.cards!=null?c.cards.toLocaleString()+' cards':'card count unavailable'):c.files+' files'}</div>
                                 <div class="text-xs text-slate-500">Modified: ${c.modified}</div>
                             </div>
                         `).join('')}
                     </div>
+                    ${u.devices&&u.devices.length?`
+                    <div class="text-xs text-slate-500 uppercase mt-4 mb-2">Devices</div>
+                    <div class="space-y-1.5">
+                        ${u.devices.map(dv=>`
+                            <div class="flex justify-between items-center text-sm ${darkMode?'bg-slate-800':'bg-white'} rounded-lg px-3 py-2">
+                                <span>${/android|ios|iphone|ipad/i.test(dv.platform)?'📱':'💻'} ${esc(dv.platform)} · Anki ${esc(dv.version)}</span>
+                                <span class="text-slate-500 text-xs">last seen ${dv.last_seen}</span>
+                            </div>
+                        `).join('')}
+                    </div>`:''}
                 </div>
             </div>
         `).join('');
     }catch(e){}
 }
 
-function toggleUser(i){expandedUser=expandedUser===i?null:i;loadUsers();}
+function toggleUser(i){expandedUser=expandedUser===i?null:i;renderUsers();}
 
 async function loadBackups(){
     try{
         const r=await fetch('/api/backups');const d=await r.json();
         document.getElementById('bktbl').innerHTML=d.map(b=>`
             <tr class="border-b ${darkMode?'border-slate-700':'border-gray-200'}">
-                <td class="py-3 font-mono text-xs">${b.name}</td>
+                <td class="py-3 font-mono text-xs">${esc(b.name)}${b.kind==='safety'?' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-purple-500/20 text-purple-400">pre-restore</span>':''}</td>
                 <td class="py-3">${b.size_formatted}</td>
                 <td class="py-3 text-slate-500">${b.created}</td>
-                <td class="py-3 text-right"><a href="/api/backups/download/${b.name}" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs text-white">↓ Download</a></td>
+                <td class="py-3 text-right whitespace-nowrap"><a href="/api/backups/download/${encodeURIComponent(b.name)}" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs text-white">↓ Download</a> <button onclick="deleteBackup('${esc(b.name)}')" class="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-xs text-white">✕ Delete</button></td>
             </tr>
         `).join('')||'<tr><td colspan="4" class="py-4 text-center text-slate-500">No backups</td></tr>';
     }catch(e){}
+}
+
+async function deleteBackup(n){
+    if(!confirm('Delete backup '+n+'?'))return;
+    try{
+        const r=await fetch('/api/backups/delete/'+encodeURIComponent(n),{method:'POST'});
+        const d=await r.json();
+        if(d.success)loadBackups();else alert(d.error||'Failed');
+    }catch(e){alert('Failed to delete');}
 }
 
 async function createBackup(){
@@ -688,27 +871,35 @@ async function testNotify(){
     }catch(e){alert('Failed to send notification');}
 }
 
+let logLines=[];
 async function loadLogs(t){
     logType=t;
     document.querySelectorAll('.logbtn').forEach(b=>{b.classList.remove('bg-blue-600','text-white');b.classList.add('bg-slate-700','text-slate-300');});
-    event.target.classList.remove('bg-slate-700','text-slate-300');
-    event.target.classList.add('bg-blue-600','text-white');
+    const btn=window.event&&event.target&&event.target.classList.contains('logbtn')?event.target:document.querySelector('.logbtn');
+    if(btn){btn.classList.remove('bg-slate-700','text-slate-300');btn.classList.add('bg-blue-600','text-white');}
     try{
-        const r=await fetch('/api/logs/'+t+'?lines=200');const d=await r.json();
-        const v=document.getElementById('logview');
-        if(!d.lines||!d.lines.length||!d.lines[0]){
-            v.innerHTML='<div class="text-slate-500">No logs</div>';
-        }else{
-            v.innerHTML=d.lines.map(l=>{
-                let c='text-slate-400';
-                if(l.includes('ERROR')||l.includes('FAILED'))c='text-red-400';
-                else if(l.includes('SUCCESS')||l.includes('COMPLETE'))c='text-green-400';
-                else if(l.includes('WARN'))c='text-yellow-400';
-                return`<div class="${c} border-b border-slate-800/50 py-1">${esc(l)}</div>`;
-            }).join('');
-            v.scrollTop=v.scrollHeight;
-        }
+        const r=await fetch('/api/logs/'+t+'?lines=500');const d=await r.json();
+        logLines=(d.lines&&d.lines[0])?d.lines:[];
+        renderLogs();
     }catch(e){document.getElementById('logview').innerHTML='<div class="text-red-400">Failed to load</div>';}
+}
+
+function renderLogs(){
+    const v=document.getElementById('logview');
+    const q=(document.getElementById('logfilter').value||'').toLowerCase();
+    const lines=q?logLines.filter(l=>l.toLowerCase().includes(q)):logLines;
+    if(!lines.length){
+        v.innerHTML='<div class="text-slate-500">'+(q?'No matching lines':'No logs')+'</div>';
+        return;
+    }
+    v.innerHTML=lines.map(l=>{
+        let c='text-slate-400';
+        if(l.includes('ERROR')||l.includes('FAILED'))c='text-red-400';
+        else if(l.includes('SUCCESS')||l.includes('COMPLETE'))c='text-green-400';
+        else if(l.includes('WARN'))c='text-yellow-400';
+        return`<div class="${c} border-b border-slate-800/50 py-1">${esc(l)}</div>`;
+    }).join('');
+    if(document.getElementById('logfollow').checked)v.scrollTop=v.scrollHeight;
 }
 
 function refreshLogs(){loadLogs(logType);}
@@ -734,6 +925,8 @@ async function loadSystem(){
         document.getElementById('container-info').innerHTML=`
             <div><div class="text-xs text-slate-500">Container ID</div><div class="text-sm font-mono">${d.container_id}</div></div>
             <div><div class="text-xs text-slate-500">Image</div><div class="text-sm">${d.image_name}</div></div>
+            <div><div class="text-xs text-slate-500">Container OS</div><div class="text-sm">${esc(d.os)}</div></div>
+            <div><div class="text-xs text-slate-500">Host Kernel</div><div class="text-sm">${esc(d.kernel)}</div></div>
             <div><div class="text-xs text-slate-500">Restarts</div><div class="text-lg font-semibold text-green-400">${d.restarts}</div></div>
         `;
     }catch(e){}

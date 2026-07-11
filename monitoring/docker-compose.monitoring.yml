@@ -1,0 +1,28 @@
+# Prometheus + Grafana for anki-sync-server-enhanced.
+# Run next to your anki-sync container (service name: anki-sync) with
+# METRICS_ENABLED=true, then open Grafana at :3000 (admin/admin).
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: anki-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9091:9090"
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: anki-grafana
+    restart: unless-stopped
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+
+volumes:
+  prometheus-data:
+  grafana-data:

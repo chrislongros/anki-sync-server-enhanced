@@ -548,12 +548,31 @@ monitor_sync_output() {
         ip=$(echo "$line" | grep -o 'ip=[^ }]*' | head -1)
         ip="${ip#ip=}"; ip="${ip%\"}"; ip="${ip#\"}"
 
+        # authenticated requests carry uid=; record their latency
+        case "$line" in
+            *'uid="'*)
+                if [ "$status" = "200" ]; then
+                    elap=$(echo "$line" | grep -o 'elap_ms=[0-9]*' | head -1)
+                    elap="${elap#elap_ms=}"
+                    uri=$(echo "$line" | grep -o 'uri="[^"]*"' | head -1)
+                    [ -n "$elap" ] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] LATENCY ${uri} ms=${elap}" >> /var/log/anki/latency.log
+                fi
+                ;;
+        esac
+
         case "$line" in
             *'uri="/sync/hostKey"'*)
                 if [ "$status" = "200" ]; then
                     echo "[$(date '+%Y-%m-%d %H:%M:%S')] AUTH_SUCCESS ip=\"${ip:-unknown}\"" >> /var/log/anki/auth.log
                 else
                     echo "[$(date '+%Y-%m-%d %H:%M:%S')] AUTH_FAILED ip=\"${ip:-unknown}\"" >> /var/log/anki/auth.log
+                fi
+                ;;
+            *'uri="/sync/meta"'*)
+                if [ "$status" = "200" ]; then
+                    uid=$(echo "$line" | grep -o 'uid="[^"]*"' | head -1)
+                    client=$(echo "$line" | grep -o 'client="[^"]*"' | head -1)
+                    [ -n "$uid" ] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEVICE ${uid} ${client}" >> /var/log/anki/devices.log
                 fi
                 ;;
             *'uri="/sync/finish"'*)

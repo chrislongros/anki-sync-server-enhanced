@@ -1,0 +1,117 @@
+{
+  "title": "Anki Sync Server",
+  "uid": "anki-sync-server",
+  "schemaVersion": 39,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Users",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "anki_sync_users_total", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Sync Data",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "anki_sync_data_bytes", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+    },
+    {
+      "id": 3, "type": "stat", "title": "Total Syncs",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "anki_sync_operations_total", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Backups",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "anki_sync_backup_count", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "text" } }, "overrides": [] }
+    },
+    {
+      "id": 5, "type": "stat", "title": "Last Backup Age",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "time() - anki_sync_backup_last_timestamp_seconds > 0 or vector(0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null }, { "color": "orange", "value": 172800 }, { "color": "red", "value": 604800 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 6, "type": "stat", "title": "Failed Logins (total)",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "anki_sync_auth_failed_total", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null }, { "color": "orange", "value": 5 }, { "color": "red", "value": 20 } ] } }, "overrides": [] }
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Syncs per hour",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "increase(anki_sync_operations_total[1h])", "legendFormat": "syncs", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1 }, "min": 0, "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Request latency (recent window)",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "anki_sync_request_latency_ms", "legendFormat": "{{stat}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0 }, "min": 0 }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Total syncs over time",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "anki_sync_operations_total", "legendFormat": "syncs", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }, "min": 0, "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 10, "type": "bargauge", "title": "Data per user",
+      "gridPos": { "x": 12, "y": 12, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "anki_sync_user_data_bytes", "legendFormat": "{{user}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "fixed", "fixedColor": "blue" }, "min": 0 }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "basic", "showUnfilled": true }
+    },
+    {
+      "id": 11, "type": "bargauge", "title": "Devices per user",
+      "gridPos": { "x": 18, "y": 12, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "anki_sync_devices_total", "legendFormat": "{{user}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "none", "color": { "mode": "fixed", "fixedColor": "blue" }, "min": 0, "decimals": 0 }, "overrides": [] },
+      "options": { "orientation": "horizontal", "displayMode": "basic", "showUnfilled": true }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Storage over time",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "anki_sync_collections_bytes", "legendFormat": "collections", "refId": "A" },
+        { "expr": "anki_sync_media_bytes", "legendFormat": "media", "refId": "B" },
+        { "expr": "anki_sync_backup_bytes", "legendFormat": "backups", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }, "min": 0 }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "Cards / notes / reviews over time",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "anki_sync_cards_total", "legendFormat": "cards {{user}}", "refId": "A" },
+        { "expr": "anki_sync_notes_total", "legendFormat": "notes {{user}}", "refId": "B" },
+        { "expr": "anki_sync_reviews_total", "legendFormat": "reviews {{user}}", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0 }, "min": 0, "decimals": 0 }, "overrides": [] },
+      "options": { "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    }
+  ]
+}
