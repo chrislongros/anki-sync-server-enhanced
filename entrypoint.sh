@@ -284,9 +284,9 @@ fi
 
 echo "$USER_COUNT" > /var/lib/anki/user_count.txt
 
-# Initialize metrics tracking files
-echo "0" > /var/lib/anki/sync_count.txt
-echo "0" > /var/lib/anki/bytes_synced.txt
+# Initialize metrics tracking files (keep counts across restarts)
+[ -f /var/lib/anki/sync_count.txt ] || echo "0" > /var/lib/anki/sync_count.txt
+[ -f /var/lib/anki/bytes_synced.txt ] || echo "0" > /var/lib/anki/bytes_synced.txt
 
 # -----------------------------------------------------------------------------
 # Setup TLS with Caddy
