@@ -433,7 +433,17 @@ fi
 if [ "$BACKUP_ENABLED" = "true" ]; then
     log_info "Setting up automated backups (schedule: $BACKUP_SCHEDULE)"
 
-    echo "$BACKUP_SCHEDULE /usr/local/bin/backup.sh >> /var/log/anki/backup.log 2>&1" > /etc/cron.d/anki-backup
+    # cron starts jobs with an empty environment
+    for var in $(compgen -e | grep -E '^(BACKUP_|S3_|NOTIFY_|EMAIL_|SYNC_BASE$|TZ$)'); do
+        printf 'export %s=%q\n' "$var" "${!var}"
+    done > /etc/anki-backup.env
+    chown anki:anki /etc/anki-backup.env
+    chmod 0600 /etc/anki-backup.env
+
+    cat > /etc/cron.d/anki-backup << EOF
+SHELL=/bin/bash
+$BACKUP_SCHEDULE anki . /etc/anki-backup.env && /usr/local/bin/backup.sh >> /var/log/anki/backup.log 2>&1
+EOF
     chmod 0644 /etc/cron.d/anki-backup
 
     cron
